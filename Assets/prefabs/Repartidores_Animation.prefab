@@ -193,7 +193,7 @@ RectTransform:
   m_GameObject: {fileID: 7650287870043268402}
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0.027}
-  m_LocalScale: {x: 0.039134, y: 0.039134, z: 0.039134}
+  m_LocalScale: {x: -0.039134, y: 0.039134, z: 0.039134}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 4724805909929060869}
@@ -306,7 +306,7 @@ MonoBehaviour:
   m_fontSizeMin: 18
   m_fontSizeMax: 72
   m_fontStyle: 0
-  m_HorizontalAlignment: 1
+  m_HorizontalAlignment: 2
   m_VerticalAlignment: 256
   m_textAlignment: 65535
   m_characterSpacing: 0
@@ -411,6 +411,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Repartidores_Animation
       objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 2fc348fd45cf5fd4096e262bc5fa1e2b, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
@@ -426,10 +430,10 @@ PrefabInstance:
       addedObject: {fileID: 8974243609960523046}
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 3192300531857221762}
+      addedObject: {fileID: 4204923313498442753}
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 4204923313498442753}
+      addedObject: {fileID: 3192300531857221762}
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       insertIndex: -1
       addedObject: {fileID: 6808806553271187913}
@@ -448,7 +452,15 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       insertIndex: -1
       addedObject: {fileID: -4128867320874913490}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 6855990020643329379}
   m_SourcePrefab: {fileID: 100100000, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
+--- !u!95 &1689356896730951807 stripped
+Animator:
+  m_CorrespondingSourceObject: {fileID: 5866666021909216657, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
+  m_PrefabInstance: {fileID: 5051728766875831790}
+  m_PrefabAsset: {fileID: 0}
 --- !u!137 &2491504218613063875 stripped
 SkinnedMeshRenderer:
   m_CorrespondingSourceObject: {fileID: 7244252681929239853, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
@@ -487,6 +499,31 @@ CapsuleCollider:
   m_Height: 0.82
   m_Direction: 1
   m_Center: {x: 0, y: 0.39, z: 0}
+--- !u!143 &4204923313498442753
+CharacterController:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5393677782440784063}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Height: 0.82
+  m_Radius: 0.32
+  m_SlopeLimit: 45
+  m_StepOffset: 0.3
+  m_SkinWidth: 0.08
+  m_MinMoveDistance: 0.001
+  m_Center: {x: 0, y: 0.39, z: 0}
 --- !u!114 &3192300531857221762
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -514,31 +551,6 @@ MonoBehaviour:
   AutoObjectParentSync: 1
   SyncOwnerTransformWhenParented: 1
   AllowOwnerToParent: 0
---- !u!143 &4204923313498442753
-CharacterController:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5393677782440784063}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Height: 0.82
-  m_Radius: 0.32
-  m_SlopeLimit: 45
-  m_StepOffset: 0.3
-  m_SkinWidth: 0.08
-  m_MinMoveDistance: 0.001
-  m_Center: {x: 0, y: 0.39, z: 0}
 --- !u!114 &6808806553271187913
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -684,9 +696,28 @@ MonoBehaviour:
   hatRenderer: {fileID: 8560065746654599088}
   bodyRenderer: {fileID: 5541584880571454512}
   bagRenderer: {fileID: 2491504218613063875}
+  nameTextLabel: {fileID: 0}
   hatMaterialIndex: 0
   bodyMaterialIndex: 0
   bagMaterialIndex: 0
+  autoLoadFromPlayerPrefs: 1
+--- !u!114 &6855990020643329379
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5393677782440784063}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: abe2e171fc1e2424582c4b0209343711, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimationController
+  animator: {fileID: 1689356896730951807}
+  movementManager: {fileID: 6808806553271187913}
+  movingBoolParam: IsMoving
+  speedFloatParam: Speed
+  speedThreshold: 0.1
 --- !u!137 &5541584880571454512 stripped
 SkinnedMeshRenderer:
   m_CorrespondingSourceObject: {fileID: 791774380976937438, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}

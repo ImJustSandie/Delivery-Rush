@@ -186,7 +186,10 @@ public class PodiumManager : MonoBehaviour
             TeleportPlayerToSlot(pm, slot);
             if (rankLabels != null && i < rankLabels.Length && rankLabels[i] != null)
             {
-                rankLabels[i].text = $"#{i + 1} {pm.name.Replace("(Clone)", "")}\nPuntos: {pm.Score}";
+                string playerName = pm.TryGetComponent<NetworkPlayerSkinSynchronizer>(out var skinSync) && !string.IsNullOrWhiteSpace(skinSync.PlayerName)
+                    ? skinSync.PlayerName 
+                    : pm.name.Replace("(Clone)", "");
+                rankLabels[i].text = $"#{i + 1} {playerName}\nPuntos: {pm.Score}";
             }
         }
 

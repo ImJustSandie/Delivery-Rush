@@ -43,6 +43,11 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
     public void OnPlayerNameChanged(string newName)
     {
         PlayerCustomizationData.PlayerName = newName;
+        if (preview != null)
+        {
+            preview.ApplyPlayerName(newName);
+        }
+        SyncWithNetwork();
     }
 
     // --- Hat Customization ---
@@ -80,6 +85,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         {
             preview.ApplyHatMaterial(skinDatabase.GetHatMaterial(currentHatIndex));
         }
+        SyncWithNetwork();
     }
 
     // --- Body Customization ---
@@ -117,6 +123,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         {
             preview.ApplyBodyMaterial(skinDatabase.GetBodyMaterial(currentBodyIndex));
         }
+        SyncWithNetwork();
     }
 
     // --- Bag Customization ---
@@ -154,14 +161,32 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         {
             preview.ApplyBagMaterial(skinDatabase.GetBagMaterial(currentBagIndex));
         }
+        SyncWithNetwork();
+    }
+
+    private void SyncWithNetwork()
+    {
+        NetworkPlayerSkinSynchronizer[] synchronizers = FindObjectsByType<NetworkPlayerSkinSynchronizer>(FindObjectsSortMode.None);
+        foreach (var sync in synchronizers)
+        {
+            if (sync.IsOwner)
+            {
+                sync.UpdateSkinSelection(currentHatIndex, currentBodyIndex, currentBagIndex);
+                sync.UpdatePlayerName(PlayerCustomizationData.PlayerName);
+            }
+        }
     }
 
     private void UpdateAllPreviews()
     {
-        if (preview == null || skinDatabase == null) return;
-        preview.ApplyHatMaterial(skinDatabase.GetHatMaterial(currentHatIndex));
-        preview.ApplyBodyMaterial(skinDatabase.GetBodyMaterial(currentBodyIndex));
-        preview.ApplyBagMaterial(skinDatabase.GetBagMaterial(currentBagIndex));
+        if (preview == null) return;
+        if (skinDatabase != null)
+        {
+            preview.ApplyHatMaterial(skinDatabase.GetHatMaterial(currentHatIndex));
+            preview.ApplyBodyMaterial(skinDatabase.GetBodyMaterial(currentBodyIndex));
+            preview.ApplyBagMaterial(skinDatabase.GetBagMaterial(currentBagIndex));
+        }
+        preview.ApplyPlayerName(PlayerCustomizationData.PlayerName);
     }
 
     public void ReturnToConnectionScene()

@@ -9,7 +9,7 @@ public static class PlayerCustomizationData
 
     public static string PlayerName
     {
-        get => PlayerPrefs.GetString(KeyPlayerName, "Jugador");
+        get => PlayerPrefs.GetString(KeyPlayerName, "Repartidor");
         set
         {
             PlayerPrefs.SetString(KeyPlayerName, value);

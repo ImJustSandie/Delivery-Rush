@@ -157,6 +157,11 @@ public class InteractableCube : NetworkBehaviour
 
     private void TryCollectFromCollider(Collider other)
     {
+        // Solo procesar detección por trigger en el servidor/host.
+        // Los clientes usan detección por proximidad desde PlayerMovementManager
+        // para evitar problemas de ownership en los RPCs.
+        if (IsSpawned && !IsServer) return;
+
         if (isCollected || isCarried) return;
         if (Time.time - spawnTime < collectProtectionTime) return;
 

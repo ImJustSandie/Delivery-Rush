@@ -239,15 +239,33 @@ public class LobbyPlayerDisplay : NetworkBehaviour
     }
 
     /// <summary>
-    /// Establece el texto del identificador del jugador (ej. "Jugador 1", "Jugador 2").
+    /// Establece el texto del identificador del jugador (ej. "Jugador 1", "Jugador 2" o nombre personalizado).
     /// </summary>
-    private void UpdatePlayerLabel()
+    public void UpdatePlayerLabel()
     {
         if (playerLabelText == null) return;
 
-        // El número de jugador es 1-indexed (SlotIndex + 1)
         int playerNumber = GetSlotIndex() + 1;
-        playerLabelText.text = string.Format(labelFormat, playerNumber);
+        NetworkPlayerSkinSynchronizer skinSync = GetComponent<NetworkPlayerSkinSynchronizer>();
+        string customName = "";
+
+        if (skinSync != null && !string.IsNullOrWhiteSpace(skinSync.PlayerName))
+        {
+            customName = skinSync.PlayerName;
+        }
+        else if (IsOwner)
+        {
+            customName = PlayerCustomizationData.PlayerName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(customName))
+        {
+            playerLabelText.text = customName;
+        }
+        else
+        {
+            playerLabelText.text = string.Format(labelFormat, playerNumber);
+        }
     }
 
     /// <summary>

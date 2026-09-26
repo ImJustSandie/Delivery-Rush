@@ -16,20 +16,37 @@ public class CharacterCustomizationPreview : MonoBehaviour
     [Tooltip("Renderer responsable de la mochila (Bag).")]
     [SerializeField] private Renderer bagRenderer;
 
+    [Header("UI / Name Display (Opcional)")]
+    [Tooltip("Texto TMP sobre el dummy de preview para mostrar el nombre en tiempo real.")]
+    [SerializeField] private TMPro.TMP_Text nameTextLabel;
+
     [Header("Sub-material Indices (Opcional)")]
     [Tooltip("Índice de material dentro del Renderer si el objeto usa múltiples sub-materiales.")]
     [SerializeField] private int hatMaterialIndex = 0;
     [SerializeField] private int bodyMaterialIndex = 0;
     [SerializeField] private int bagMaterialIndex = 0;
 
+    [Tooltip("Si es verdadero, cargará los skins guardados en PlayerPrefs en Start y OnEnable (solo para previews fuera de red).")]
+    [SerializeField] private bool autoLoadFromPlayerPrefs = true;
+
     private void Start()
     {
-        LoadSavedSkinsFromPlayerPrefs();
+        TryAutoLoadPlayerPrefs();
     }
 
     private void OnEnable()
     {
-        LoadSavedSkinsFromPlayerPrefs();
+        TryAutoLoadPlayerPrefs();
+    }
+
+    private void TryAutoLoadPlayerPrefs()
+    {
+        // No cargar automátiamente PlayerPrefs en objetos que tienen NetworkPlayerSkinSynchronizer,
+        // ya que la red (NGO) se encarga de determinar si es el owner o remoto.
+        if (autoLoadFromPlayerPrefs && GetComponent<NetworkPlayerSkinSynchronizer>() == null)
+        {
+            LoadSavedSkinsFromPlayerPrefs();
+        }
     }
 
     /// <summary>
@@ -37,11 +54,30 @@ public class CharacterCustomizationPreview : MonoBehaviour
     /// </summary>
     public void LoadSavedSkinsFromPlayerPrefs()
     {
-        if (skinDatabase == null) return;
+        if (skinDatabase != null)
+        {
+            ApplyHatMaterial(skinDatabase.GetHatMaterial(PlayerCustomizationData.HatIndex));
+            ApplyBodyMaterial(skinDatabase.GetBodyMaterial(PlayerCustomizationData.BodyIndex));
+            ApplyBagMaterial(skinDatabase.GetBagMaterial(PlayerCustomizationData.BagIndex));
+        }
+        ApplyPlayerName(PlayerCustomizationData.PlayerName);
+    }
 
-        ApplyHatMaterial(skinDatabase.GetHatMaterial(PlayerCustomizationData.HatIndex));
-        ApplyBodyMaterial(skinDatabase.GetBodyMaterial(PlayerCustomizationData.BodyIndex));
-        ApplyBagMaterial(skinDatabase.GetBagMaterial(PlayerCustomizationData.BagIndex));
+    /// <summary>
+    /// Actualiza la etiqueta con el nombre sobre el dummy en tiempo real.
+    /// </summary>
+    public void ApplyPlayerName(string newName)
+    {
+        if (nameTextLabel != null)
+        {
+            nameTextLabel.text = string.IsNullOrWhiteSpace(newName) ? "Repartidor" : newName;
+        }
+
+        LobbyPlayerDisplay display = GetComponent<LobbyPlayerDisplay>();
+        if (display != null)
+        {
+            display.UpdatePlayerLabel();
+        }
     }
 
     public void ApplyHatMaterial(Material newMat)

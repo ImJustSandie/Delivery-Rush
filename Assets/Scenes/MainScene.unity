@@ -905,7 +905,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MatchTimerManager
   ShowTopMostFoldoutHeaderGroup: 1
-  matchDuration: 10
+  matchDuration: 20
   podiumSceneName: Podio
   mainSceneName: MainScene
   autoStartOnMainScene: 1

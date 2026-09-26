@@ -245,6 +245,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: PlayerDummy_Preview
       objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 2fc348fd45cf5fd4096e262bc5fa1e2b, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
@@ -255,6 +259,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       insertIndex: -1
       addedObject: {fileID: 8974243609960523046}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 3164789963712588363}
   m_SourcePrefab: {fileID: 100100000, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
 --- !u!4 &4724805909929060869 stripped
 Transform:
@@ -289,3 +296,20 @@ CapsuleCollider:
   m_Height: 0.82
   m_Direction: 1
   m_Center: {x: 0, y: 0.39, z: 0}
+--- !u!114 &3164789963712588363
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5393677782440784063}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: abe2e171fc1e2424582c4b0209343711, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimationController
+  animator: {fileID: 0}
+  movementManager: {fileID: 0}
+  movingBoolParam: IsMoving
+  speedFloatParam: Speed
+  speedThreshold: 0.1

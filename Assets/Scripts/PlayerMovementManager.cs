@@ -72,6 +72,13 @@ public class PlayerMovementManager : NetworkBehaviour
     [SerializeField] private float gravity = -9.81f;
     private float verticalVelocity;
 
+    [Header("Proximity Collection")]
+    [Tooltip("Radio de detección para recoger collectibles automáticamente.")]
+    [SerializeField] private float collectRadius = 1.5f;
+
+    private float lastCollectAttemptTime;
+    private const float CollectAttemptCooldown = 0.15f;
+
     [Header("Scene Camera Settings")]
     [Tooltip("Nombre de la escena de Lobby donde la cámara del personaje debe permanecer desactivada.")]
     [SerializeField] private string lobbySceneName = "Lobby";
@@ -328,6 +335,12 @@ public class PlayerMovementManager : NetworkBehaviour
             return;
         }
 
+        // Re-habilitar CharacterController si fue desactivado en el lobby
+        if (characterController != null && !characterController.enabled)
+        {
+            characterController.enabled = true;
+        }
+
         // Lazy resolve por si la cámara se instanció después
         if (cameraTransform == null)
             ResolveCameraTransform();
@@ -401,6 +414,73 @@ public class PlayerMovementManager : NetworkBehaviour
 
         RefreshCarryingState();
         PublishPlayerState();
+
+        // Detectar collectibles cercanos por proximidad (funciona tanto en host como en cliente)
+        TryCollectNearby();
+    }
+
+    /// <summary>
+    /// Detecta collectibles cercanos usando OverlapSphere y solicita la recolección.
+    /// Esto reemplaza la dependencia en triggers del InteractableCube que no
+    /// funcionan de forma fiable para jugadores clientes.
+    /// </summary>
+    private void TryCollectNearby()
+    {
+        if (IsInventoryFull) return;
+        if (Time.time - lastCollectAttemptTime < CollectAttemptCooldown) return;
+
+        // Buscar colliders cercanos (tanto solid como trigger del collectible)
+        Collider[] hits = Physics.OverlapSphere(transform.position + Vector3.up * 0.5f, collectRadius);
+        foreach (Collider hit in hits)
+        {
+            InteractableCube cube = hit.GetComponentInParent<InteractableCube>();
+            if (cube == null || cube.IsCollected) continue;
+
+            NetworkObject cubeNetObj = cube.GetComponent<NetworkObject>();
+            if (cubeNetObj == null || !cubeNetObj.IsSpawned) continue;
+
+            lastCollectAttemptTime = Time.time;
+
+            if (IsServer)
+            {
+                cube.TryCollect(this);
+            }
+            else
+            {
+                // El RPC va en PlayerMovementManager (propiedad del cliente),
+                // no en InteractableCube (propiedad del servidor), para
+                // que el sistema de permisos de NGO lo permita.
+                RequestCollectItemServerRpc(cubeNetObj.NetworkObjectId);
+            }
+            break; // Un intento por cooldown
+        }
+    }
+
+    /// <summary>
+    /// RPC llamado por el cliente dueño de este jugador para solicitar al servidor
+    /// la recolección de un collectible específico. Al estar en el NetworkObject
+    /// del propio jugador, no hay problemas de permisos de ownership.
+    /// </summary>
+    [Rpc(SendTo.Server)]
+    private void RequestCollectItemServerRpc(ulong collectibleNetworkObjectId)
+    {
+        if (IsInventoryFull) return;
+
+        if (!NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(collectibleNetworkObjectId, out NetworkObject cubeObj))
+            return;
+
+        InteractableCube cube = cubeObj.GetComponent<InteractableCube>();
+        if (cube == null || cube.IsCollected) return;
+
+        // Validar proximidad en el servidor para evitar exploits
+        float distance = Vector3.Distance(transform.position, cubeObj.transform.position);
+        if (distance > collectRadius * 3f)
+        {
+            Debug.Log($"[PlayerMovementManager] {name} demasiado lejos del collectible {cube.name}: {distance:F1}m");
+            return;
+        }
+
+        cube.TryCollect(this);
     }
 
     private void EnsureCharacterController()
