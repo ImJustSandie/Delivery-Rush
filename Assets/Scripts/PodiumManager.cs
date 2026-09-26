@@ -189,15 +189,16 @@ public class PodiumManager : MonoBehaviour
                 string playerName = pm.TryGetComponent<NetworkPlayerSkinSynchronizer>(out var skinSync) && !string.IsNullOrWhiteSpace(skinSync.PlayerName)
                     ? skinSync.PlayerName 
                     : pm.name.Replace("(Clone)", "");
-                rankLabels[i].text = $"#{i + 1} {playerName}\nPuntos: {pm.Score}";
+                int playerSlot = GetPlayerSlotIndex(pm) + 1;
+                rankLabels[i].text = $"P{playerSlot}: {playerName}\nPuntos: {pm.Score}";
             }
         }
 
         if (logRanking)
         {
-            string log = "[PodiumManager] Ranking:\n";
+            string log = "[PodiumManager] Posiciones de Podio (por Slot de Jugador):\n";
             for (int i = 0; i < rankedPlayers.Count; i++)
-                log += $"{i + 1}º {rankedPlayers[i].name} - {rankedPlayers[i].Score} pts (lleva {rankedPlayers[i].CollectedCount})\n";
+                log += $"Slot {GetPlayerSlotIndex(rankedPlayers[i]) + 1} -> {rankedPlayers[i].name} - {rankedPlayers[i].Score} pts (lleva {rankedPlayers[i].CollectedCount})\n";
             Debug.Log(log);
         }
 
@@ -270,12 +271,25 @@ public class PodiumManager : MonoBehaviour
         return go.transform;
     }
 
+    private int GetPlayerSlotIndex(PlayerMovementManager pm)
+    {
+        if (pm == null) return 0;
+        if (pm.TryGetComponent<LobbyPlayerDisplay>(out var display))
+        {
+            return display.PlayerSlotIndex;
+        }
+        if (NetworkGameManager.Instance != null)
+        {
+            return NetworkGameManager.Instance.GetPlayerSlot(pm.OwnerClientId);
+        }
+        return (int)(pm.OwnerClientId % 4);
+    }
+
     private void RankPlayers()
     {
-        // Ordenar por Score descendente, desempate por OwnerClientId
+        // Mantener a cada jugador en su posición/slot correspondiente como jugador (0, 1, 2, 3)
         rankedPlayers = rankedPlayers
-            .OrderByDescending(p => p.Score)
-            .ThenBy(p => p.OwnerClientId)
+            .OrderBy(p => GetPlayerSlotIndex(p))
             .ToList();
     }
 
@@ -303,42 +317,72 @@ public class PodiumManager : MonoBehaviour
         if (player == null || slot == null) yield break;
         // Total real = entregados + los que aún lleva encima (por si no alcanzó a entregar)
         int totalBlocks = player.Score + player.CollectedCount;
-        if (totalBlocks <= 0)
+        if (totalBlocks > 0)
         {
-            // Sin puntos: se queda en el podio sin saltar (sin físicas)
+            // Calcular intervalo adaptado para no tardar demasiado si hay muchos puntos
+            float interval = blockSpawnInterval;
+            if (totalBlocks * interval > maxBuildDuration)
+                interval = maxBuildDuration / totalBlocks;
+
+            Vector3 basePos = slot.position;
+            GameObject blockPrefab = ResolveBlockPrefab();
+
+            for (int i = 0; i < totalBlocks; i++)
+            {
+                Vector3 blockPos = basePos + Vector3.up * (i * blockHeight);
+
+                // Spawnear bloque local sin físicas: solo visual apilado, no desplazable
+                GameObject block = Instantiate(blockPrefab, blockPos, Quaternion.identity);
+                block.name = $"Tower_{player.OwnerClientId}_{i}";
+                block.transform.localScale = blockSize;
+                MakeBlockStatic(block);
+                spawnedBlocks.Add(block);
+
+                // Animar exactamente 1 salto por bloque hasta la nueva altura
+                Vector3 targetPlayerPos = basePos + Vector3.up * (playerHeightOffset + (i + 1) * blockHeight);
+                yield return AnimateJump(player, targetPlayerPos);
+
+                yield return new WaitForSeconds(interval);
+            }
+
+            Debug.Log($"[PodiumManager] {player.name} completó torre de {totalBlocks} bloques.");
+        }
+        else
+        {
             Debug.Log($"[PodiumManager] {player.name} sin puntos, no salta.");
-            yield break;
         }
 
-        // Calcular intervalo adaptado para no tardar demasiado si hay muchos puntos
-        float interval = blockSpawnInterval;
-        if (totalBlocks * interval > maxBuildDuration)
-            interval = maxBuildDuration / totalBlocks;
+        // Determinar si es 1er lugar para activar la animación adecuada
+        TriggerPostJumpAnimation(player);
+    }
 
-        Vector3 basePos = slot.position;
-        GameObject blockPrefab = ResolveBlockPrefab();
+    private void TriggerPostJumpAnimation(PlayerMovementManager player)
+    {
+        if (player == null) return;
 
-        for (int i = 0; i < totalBlocks; i++)
+        int maxScore = (rankedPlayers != null && rankedPlayers.Count > 0)
+            ? rankedPlayers.Max(p => p != null ? p.Score + p.CollectedCount : 0)
+            : 0;
+
+        int playerBlocks = player.Score + player.CollectedCount;
+
+        // Es primer lugar si tiene el máximo de puntos (y al menos 1 punto) o es el primero de la lista
+        bool isFirstPlace = false;
+        if (maxScore > 0)
         {
-            Vector3 blockPos = basePos + Vector3.up * (i * blockHeight);
-
-            // Spawnear bloque local sin físicas: solo visual apilado, no desplazable
-            GameObject block = Instantiate(blockPrefab, blockPos, Quaternion.identity);
-            block.name = $"Tower_{player.OwnerClientId}_{i}";
-            block.transform.localScale = blockSize;
-            MakeBlockStatic(block);
-            spawnedBlocks.Add(block);
-
-            // Animar exactamente 1 salto por bloque hasta la nueva altura
-            Vector3 targetPlayerPos = basePos + Vector3.up * (playerHeightOffset + (i + 1) * blockHeight);
-            yield return AnimateJump(player, targetPlayerPos);
-
-            yield return new WaitForSeconds(interval);
+            isFirstPlace = (playerBlocks == maxScore);
+        }
+        else if (rankedPlayers != null && rankedPlayers.Count > 0)
+        {
+            isFirstPlace = (rankedPlayers[0] == player);
         }
 
-        // Torre terminada: sin físicas, se queda en la cima sin más saltos (exactamente Score saltos)
-        Debug.Log($"[PodiumManager] {player.name} completó torre de {totalBlocks} bloques.");
-        // Sin bucle infinito: el jugador ya saltó totalBlocks veces
+        PlayerAnimationController animCtrl = player.GetComponentInChildren<PlayerAnimationController>();
+        if (animCtrl != null)
+        {
+            animCtrl.PlayResultAnimation(isFirstPlace);
+            Debug.Log($"[PodiumManager] Animación de resultado activada para {player.name}: {(isFirstPlace ? "Victoria / Celebración" : "Derrota")}");
+        }
     }
 
     private GameObject ResolveBlockPrefab()

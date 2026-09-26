@@ -16,6 +16,9 @@ public class CharacterCustomizationPreview : MonoBehaviour
     [Tooltip("Renderer responsable de la mochila (Bag).")]
     [SerializeField] private Renderer bagRenderer;
 
+    [Tooltip("Renderer responsable de la piel/cuerpo base (Skin).")]
+    [SerializeField] private Renderer skinRenderer;
+
     [Header("UI / Name Display (Opcional)")]
     [Tooltip("Texto TMP sobre el dummy de preview para mostrar el nombre en tiempo real.")]
     [SerializeField] private TMPro.TMP_Text nameTextLabel;
@@ -25,6 +28,7 @@ public class CharacterCustomizationPreview : MonoBehaviour
     [SerializeField] private int hatMaterialIndex = 0;
     [SerializeField] private int bodyMaterialIndex = 0;
     [SerializeField] private int bagMaterialIndex = 0;
+    [SerializeField] private int skinMaterialIndex = 0;
 
     [Tooltip("Si es verdadero, cargará los skins guardados en PlayerPrefs en Start y OnEnable (solo para previews fuera de red).")]
     [SerializeField] private bool autoLoadFromPlayerPrefs = true;
@@ -59,6 +63,7 @@ public class CharacterCustomizationPreview : MonoBehaviour
             ApplyHatMaterial(skinDatabase.GetHatMaterial(PlayerCustomizationData.HatIndex));
             ApplyBodyMaterial(skinDatabase.GetBodyMaterial(PlayerCustomizationData.BodyIndex));
             ApplyBagMaterial(skinDatabase.GetBagMaterial(PlayerCustomizationData.BagIndex));
+            ApplySkinMaterial(skinDatabase.GetSkinMaterial(PlayerCustomizationData.SkinIndex));
         }
         ApplyPlayerName(PlayerCustomizationData.PlayerName);
     }
@@ -93,6 +98,11 @@ public class CharacterCustomizationPreview : MonoBehaviour
     public void ApplyBagMaterial(Material newMat)
     {
         ApplyMaterialToRenderer(bagRenderer, bagMaterialIndex, newMat);
+    }
+
+    public void ApplySkinMaterial(Material newMat)
+    {
+        ApplyMaterialToRenderer(skinRenderer, skinMaterialIndex, newMat);
     }
 
     private void ApplyMaterialToRenderer(Renderer rend, int index, Material newMat)

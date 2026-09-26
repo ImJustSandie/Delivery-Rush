@@ -357,15 +357,15 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       propertyPath: m_LocalScale.x
-      value: 5
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       propertyPath: m_LocalScale.y
-      value: 5
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       propertyPath: m_LocalScale.z
-      value: 5
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       propertyPath: m_LocalPosition.x
@@ -415,6 +415,10 @@ PrefabInstance:
       propertyPath: m_Controller
       value: 
       objectReference: {fileID: 9100000, guid: 2fc348fd45cf5fd4096e262bc5fa1e2b, type: 2}
+    - target: {fileID: 7488792989264331764, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 22fbc1b51214c6d40842085901e3d2d0, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
@@ -469,6 +473,11 @@ SkinnedMeshRenderer:
 --- !u!4 &4724805909929060869 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
+  m_PrefabInstance: {fileID: 5051728766875831790}
+  m_PrefabAsset: {fileID: 0}
+--- !u!137 &4744326054503543229 stripped
+SkinnedMeshRenderer:
+  m_CorrespondingSourceObject: {fileID: 561933887137250387, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
   m_PrefabInstance: {fileID: 5051728766875831790}
   m_PrefabAsset: {fileID: 0}
 --- !u!1 &5393677782440784063 stripped
@@ -576,6 +585,7 @@ MonoBehaviour:
   turnSpeed: 10
   maxCollected: 5
   gravity: 0
+  collectRadius: 1.5
   lobbySceneName: Lobby
 --- !u!114 &4411515086426812283
 MonoBehaviour:
@@ -664,6 +674,8 @@ MonoBehaviour:
   lobbySceneName: Lobby
   fallbackSlotOffset: 0
   lobbyScale: {x: 85, y: 85, z: 85}
+  podiumScale: {x: 3, y: 3, z: 3}
+  podiumSceneName: Podio
   restoreOriginalScaleOnExit: 1
 --- !u!114 &3713263699984197205
 MonoBehaviour:
@@ -696,10 +708,12 @@ MonoBehaviour:
   hatRenderer: {fileID: 8560065746654599088}
   bodyRenderer: {fileID: 5541584880571454512}
   bagRenderer: {fileID: 2491504218613063875}
+  skinRenderer: {fileID: 4744326054503543229}
   nameTextLabel: {fileID: 0}
   hatMaterialIndex: 0
   bodyMaterialIndex: 0
   bagMaterialIndex: 0
+  skinMaterialIndex: 0
   autoLoadFromPlayerPrefs: 1
 --- !u!114 &6855990020643329379
 MonoBehaviour:
@@ -717,6 +731,8 @@ MonoBehaviour:
   movementManager: {fileID: 6808806553271187913}
   movingBoolParam: IsMoving
   speedFloatParam: Speed
+  victoryParam: Victory
+  defeatParam: Defeat
   speedThreshold: 0.1
 --- !u!137 &5541584880571454512 stripped
 SkinnedMeshRenderer:

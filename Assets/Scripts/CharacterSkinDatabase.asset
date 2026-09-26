@@ -42,3 +42,7 @@ MonoBehaviour:
   - id: maleta_03
     displayName: 
     material: {fileID: 2100000, guid: d984c373f7bbf234898ad417fb963654, type: 2}
+  skinSkins:
+  - id: piel_01
+    displayName: 
+    material: {fileID: 2100000, guid: 22fbc1b51214c6d40842085901e3d2d0, type: 2}

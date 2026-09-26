@@ -6,6 +6,7 @@ public static class PlayerCustomizationData
     private const string KeyHatIndex = "PlayerCustomization_HatIndex";
     private const string KeyBodyIndex = "PlayerCustomization_BodyIndex";
     private const string KeyBagIndex = "PlayerCustomization_BagIndex";
+    private const string KeySkinIndex = "PlayerCustomization_SkinIndex";
 
     public static string PlayerName
     {
@@ -43,6 +44,16 @@ public static class PlayerCustomizationData
         set
         {
             PlayerPrefs.SetInt(KeyBagIndex, value);
+            PlayerPrefs.Save();
+        }
+    }
+
+    public static int SkinIndex
+    {
+        get => PlayerPrefs.GetInt(KeySkinIndex, 0);
+        set
+        {
+            PlayerPrefs.SetInt(KeySkinIndex, value);
             PlayerPrefs.Save();
         }
     }

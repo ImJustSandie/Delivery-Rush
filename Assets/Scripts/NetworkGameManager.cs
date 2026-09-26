@@ -200,13 +200,16 @@ public class NetworkGameManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Restablece el estado del juego para permitir nuevas conexiones en el lobby.
+    /// Restablece el estado del juego para permitir nuevas conexiones en el lobby manteniendo los slots asignados a los clientes actuales.
     /// </summary>
-    public void ResetGame()
+    public void ResetGame(bool clearSlots = false)
     {
         gameStarted = false;
-        clientSlotMap.Clear();
-        Debug.Log("[NetworkGameManager] Estado del juego restablecido. Nuevas conexiones permitidas.");
+        if (clearSlots)
+        {
+            clientSlotMap.Clear();
+        }
+        Debug.Log($"[NetworkGameManager] Estado del juego restablecido. (Slots limpiados: {clearSlots}). Nuevas conexiones permitidas.");
     }
 
     /// <summary>
@@ -233,7 +236,7 @@ public class NetworkGameManager : MonoBehaviour
     public void DisconnectLocalPlayer()
     {
         Debug.Log("[NetworkGameManager] Desconectando jugador local y regresando a la escena de conexión...");
-        ResetGame();
+        ResetGame(true);
 
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
         {

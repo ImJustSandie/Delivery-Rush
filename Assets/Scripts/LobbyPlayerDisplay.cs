@@ -30,7 +30,14 @@ public class LobbyPlayerDisplay : NetworkBehaviour
     [Tooltip("Escala personalizada que adoptará el personaje mientras esté en la escena de Lobby.")]
     [SerializeField] private Vector3 lobbyScale = new Vector3(1.5f, 1.5f, 1.5f);
 
-    [Tooltip("Si es true, el personaje restaurará su escala original al salir del Lobby hacia otra escena.")]
+    [Header("Podium Scale")]
+    [Tooltip("Escala personalizada que adoptará el personaje mientras esté en la escena de Podio.")]
+    [SerializeField] private Vector3 podiumScale = new Vector3(1.5f, 1.5f, 1.5f);
+
+    [Tooltip("Nombre de la escena de Podio para aplicar la escala de podio.")]
+    [SerializeField] private string podiumSceneName = "Podio";
+
+    [Tooltip("Si es true, el personaje restaurará su escala original al salir del Lobby o Podio hacia otra escena.")]
     [SerializeField] private bool restoreOriginalScaleOnExit = true;
 
     private Camera mainCamera;
@@ -127,6 +134,11 @@ public class LobbyPlayerDisplay : NetworkBehaviour
         UpdateScaleForCurrentScene(sceneName);
         if (sceneName == lobbySceneName)
         {
+            if (IsServer && NetworkGameManager.Instance != null)
+            {
+                assignedSlotIndex.Value = NetworkGameManager.Instance.GetOrAssignPlayerSlot(OwnerClientId);
+            }
+            positionApplied = false;
             TryUpdateLobbyPosition();
         }
     }
@@ -136,8 +148,18 @@ public class LobbyPlayerDisplay : NetworkBehaviour
         UpdateScaleForCurrentScene(scene.name);
         if (scene.name == lobbySceneName)
         {
+            if (IsServer && NetworkGameManager.Instance != null)
+            {
+                assignedSlotIndex.Value = NetworkGameManager.Instance.GetOrAssignPlayerSlot(OwnerClientId);
+            }
+            positionApplied = false;
             TryUpdateLobbyPosition();
         }
+    }
+
+    private bool IsPodiumScene(string sceneName)
+    {
+        return sceneName == podiumSceneName || sceneName == "Podio" || sceneName == "Podium";
     }
 
     private void UpdateScaleForCurrentScene(string sceneName)
@@ -145,6 +167,10 @@ public class LobbyPlayerDisplay : NetworkBehaviour
         if (sceneName == lobbySceneName)
         {
             transform.localScale = lobbyScale;
+        }
+        else if (IsPodiumScene(sceneName))
+        {
+            transform.localScale = podiumScale;
         }
         else if (restoreOriginalScaleOnExit)
         {
@@ -161,7 +187,7 @@ public class LobbyPlayerDisplay : NetworkBehaviour
         // Solo en Podio el texto debe mirar siempre al frente de la cámara (paralelo al plano de vista)
         // En Lobby/MainScene mantiene el billboard clásico hacia la posición de la cámara
         string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-        bool isPodio = sceneName == "Podio" || sceneName == "Podium";
+        bool isPodio = IsPodiumScene(sceneName);
 
         if (isPodio)
         {

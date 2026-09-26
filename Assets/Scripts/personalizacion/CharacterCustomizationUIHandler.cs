@@ -15,6 +15,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
     private int currentHatIndex;
     private int currentBodyIndex;
     private int currentBagIndex;
+    private int currentSkinIndex;
 
     private void Start()
     {
@@ -22,6 +23,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         currentHatIndex = PlayerCustomizationData.HatIndex;
         currentBodyIndex = PlayerCustomizationData.BodyIndex;
         currentBagIndex = PlayerCustomizationData.BagIndex;
+        currentSkinIndex = PlayerCustomizationData.SkinIndex;
 
         if (nameInputField != null)
         {
@@ -164,6 +166,44 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         SyncWithNetwork();
     }
 
+    // --- Base Skin (Piel) Customization ---
+    public void SelectNextSkin()
+    {
+        if (skinDatabase == null || skinDatabase.SkinSkins.Count == 0) return;
+        currentSkinIndex = (currentSkinIndex + 1) % skinDatabase.SkinSkins.Count;
+        SaveAndApplySkin();
+    }
+
+    public void SelectPreviousSkin()
+    {
+        if (skinDatabase == null || skinDatabase.SkinSkins.Count == 0) return;
+        currentSkinIndex = (currentSkinIndex - 1 + skinDatabase.SkinSkins.Count) % skinDatabase.SkinSkins.Count;
+        SaveAndApplySkin();
+    }
+
+    /// <summary>
+    /// Selecciona el tono/material de la piel directamente por índice de lista (ej: 0 para piel1, 1 para piel2, 2 para piel3).
+    /// Asignar a OnClick del botón en Unity Inspector.
+    /// </summary>
+    public void SetSkin(int index)
+    {
+        if (skinDatabase == null || skinDatabase.SkinSkins.Count == 0) return;
+        currentSkinIndex = Mathf.Clamp(index, 0, skinDatabase.SkinSkins.Count - 1);
+        SaveAndApplySkin();
+    }
+
+    public void SelectSkin(int index) => SetSkin(index);
+
+    private void SaveAndApplySkin()
+    {
+        PlayerCustomizationData.SkinIndex = currentSkinIndex;
+        if (preview != null && skinDatabase != null)
+        {
+            preview.ApplySkinMaterial(skinDatabase.GetSkinMaterial(currentSkinIndex));
+        }
+        SyncWithNetwork();
+    }
+
     private void SyncWithNetwork()
     {
         NetworkPlayerSkinSynchronizer[] synchronizers = FindObjectsByType<NetworkPlayerSkinSynchronizer>(FindObjectsSortMode.None);
@@ -171,7 +211,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         {
             if (sync.IsOwner)
             {
-                sync.UpdateSkinSelection(currentHatIndex, currentBodyIndex, currentBagIndex);
+                sync.UpdateSkinSelection(currentHatIndex, currentBodyIndex, currentBagIndex, currentSkinIndex);
                 sync.UpdatePlayerName(PlayerCustomizationData.PlayerName);
             }
         }
@@ -185,6 +225,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
             preview.ApplyHatMaterial(skinDatabase.GetHatMaterial(currentHatIndex));
             preview.ApplyBodyMaterial(skinDatabase.GetBodyMaterial(currentBodyIndex));
             preview.ApplyBagMaterial(skinDatabase.GetBagMaterial(currentBagIndex));
+            preview.ApplySkinMaterial(skinDatabase.GetSkinMaterial(currentSkinIndex));
         }
         preview.ApplyPlayerName(PlayerCustomizationData.PlayerName);
     }

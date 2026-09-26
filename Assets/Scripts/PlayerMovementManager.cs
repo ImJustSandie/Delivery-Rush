@@ -194,6 +194,12 @@ public class PlayerMovementManager : NetworkBehaviour
         // Limpiar referencia cacheada de cámara de la escena anterior para forzar re-resolución
         cameraTransform = null;
 
+        // Reiniciar puntaje únicamente al volver al Lobby (para no borrar los puntos al entrar al Podio)
+        if (IsSpawned && IsServer && scene.name == lobbySceneName)
+        {
+            ResetScoreServerSide();
+        }
+
         // Si el PodiumManager desactivó este componente, reactivarlo al entrar en una nueva escena
         if (!enabled)
         {
@@ -626,6 +632,15 @@ public class PlayerMovementManager : NetworkBehaviour
         deliveredScore.Value += amount;
         Debug.Log($"[PlayerMovementManager] {name} entregó {amount} -> puntuación {deliveredScore.Value}");
         return true;
+    }
+
+    /// <summary>Versión solo-servidor. Reinicia el puntaje entregado y el inventario a 0 para el nuevo juego.</summary>
+    public void ResetScoreServerSide()
+    {
+        if (!IsServer) return;
+        collectedCount.Value = 0;
+        deliveredScore.Value = 0;
+        Debug.Log($"[PlayerMovementManager] Puntaje e inventario reiniciados a 0 para {name}");
     }
 
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]

@@ -305,6 +305,12 @@ public class LobbyUIHandler : MonoBehaviour
             return;
         }
 
+        // Reiniciar puntajes de todos los jugadores para la nueva partida
+        foreach (var player in FindObjectsByType<PlayerMovementManager>(FindObjectsSortMode.None))
+        {
+            if (player != null) player.ResetScoreServerSide();
+        }
+
         // Marcar el inicio de la partida en el NetworkGameManager para bloquear late-join
         if (NetworkGameManager.Instance != null)
         {
