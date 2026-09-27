@@ -377,7 +377,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 19.382
+      value: 19
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       propertyPath: m_LocalRotation.w
@@ -435,9 +435,6 @@ PrefabInstance:
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 8974243609960523046}
-    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
-      insertIndex: -1
       addedObject: {fileID: 4204923313498442753}
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       insertIndex: -1
@@ -463,6 +460,12 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       insertIndex: -1
       addedObject: {fileID: 6855990020643329379}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 6982503477977103952}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 6740284991500185772}
   m_SourcePrefab: {fileID: 100100000, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
 --- !u!95 &1689356896730951807 stripped
 Animator:
@@ -489,29 +492,6 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
   m_PrefabInstance: {fileID: 5051728766875831790}
   m_PrefabAsset: {fileID: 0}
---- !u!136 &8974243609960523046
-CapsuleCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5393677782440784063}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 2
-  m_Radius: 0.32
-  m_Height: 0.82
-  m_Direction: 1
-  m_Center: {x: 0, y: 0.39, z: 0}
 --- !u!143 &4204923313498442753
 CharacterController:
   m_ObjectHideFlags: 0
@@ -530,8 +510,8 @@ CharacterController:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Height: 0.82
-  m_Radius: 0.32
+  m_Height: 0.28
+  m_Radius: 0
   m_SlopeLimit: 45
   m_StepOffset: 0.3
   m_SkinWidth: 0.08
@@ -588,6 +568,12 @@ MonoBehaviour:
   faceMoveDirection: 1
   turnSpeed: 10
   maxCollected: 5
+  maxPowerUps: 2
+  slowMultiplier: 0.5
+  boostMultiplier: 1.8
+  powerUpEffectDuration: 5
+  powerUpButtonEffect: 1
+  powerUpButton: {fileID: 0}
   gravity: 0
   collectRadius: 1.5
   lobbySceneName: Lobby
@@ -606,13 +592,21 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   spawnPointsContainerName: SpawnPoints
   spawnPointObjectName: SpawnPoint
-  spawnHeightOffset: 0.2
+  spawnHeightOffset: 0
   fallbackSpawnOffset: 1.5
   lobbySceneName: Lobby
   snapToGround: 1
+  groundProbeHeight: 30
   groundLayerMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  randomizeSpawn: 1
+  useSpawnerVolumes: 1
+  obstacleLayers:
+    serializedVersion: 2
+    m_Bits: 64
+  obstructionCheckHalfExtents: {x: 0.5, y: 1, z: 0.5}
+  maxSpawnAttempts: 20
 --- !u!114 &4331026526238001430
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -745,6 +739,43 @@ MonoBehaviour:
   victoryParam: Victory
   defeatParam: Defeat
   speedThreshold: 0.1
+--- !u!65 &6982503477977103952
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5393677782440784063}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.5486846, y: 0.5564727, z: 0.6563727}
+  m_Center: {x: 0.010852417, y: 0.3717607, z: -0.085736915}
+--- !u!114 &6740284991500185772
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5393677782440784063}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e8177e7cbc68c264a978b26ba5e8c74d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PowerUpVisuals
+  boostModel: {fileID: 6201794615766329114, guid: 0ff35766203d5654aa1df7413ecd03b2, type: 3}
+  slowMaterial: {fileID: 2100000, guid: 6de24b906416ac346aa4c1a92fee467c, type: 2}
+  matchPlayerTransform: 1
+  boostYawOffset: 0
 --- !u!137 &5541584880571454512 stripped
 SkinnedMeshRenderer:
   m_CorrespondingSourceObject: {fileID: 791774380976937438, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}

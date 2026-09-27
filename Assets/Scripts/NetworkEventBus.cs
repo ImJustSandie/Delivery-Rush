@@ -9,6 +9,10 @@ public struct PlayerNetworkState
     public bool isCarrying;
     public int collectedCount;
     public int deliveredScore;
+    public int powerUpCount;
+    public int slowPowerUpCount;
+    public int boostPowerUpCount;
+    public int activeVisualEffect;
     public Vector3 position;
     public Quaternion rotation;
 }

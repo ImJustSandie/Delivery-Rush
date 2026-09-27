@@ -381,8 +381,8 @@ Transform:
   m_GameObject: {fileID: 6201794615766329114}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.7667971, y: 1.62, z: -6.6217437}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalPosition: {x: 2.5, y: 1.62, z: 19}
+  m_LocalScale: {x: 0.33333334, y: 0.33333334, z: 0.33333334}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 3203849084527148549}
@@ -481,7 +481,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 3900674081
+  GlobalObjectIdHash: 517067881
   InScenePlacedSourceGlobalObjectIdHash: 3099992248
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -532,7 +532,14 @@ MonoBehaviour:
   faceMoveDirection: 1
   turnSpeed: 10
   maxCollected: 5
+  maxPowerUps: 3
+  slowMultiplier: 0.5
+  boostMultiplier: 1.8
+  powerUpEffectDuration: 5
+  powerUpButtonEffect: 2
+  powerUpButton: {fileID: 0}
   gravity: 0
+  collectRadius: 1.5
   lobbySceneName: Lobby
 --- !u!114 &6879259335654345081
 MonoBehaviour:
@@ -547,8 +554,23 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerSpawnSetter
   ShowTopMostFoldoutHeaderGroup: 1
+  spawnPointsContainerName: SpawnPoints
   spawnPointObjectName: SpawnPoint
   spawnHeightOffset: 0
+  fallbackSpawnOffset: 1.5
+  lobbySceneName: Lobby
+  snapToGround: 1
+  groundProbeHeight: 30
+  groundLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  randomizeSpawn: 1
+  useSpawnerVolumes: 1
+  obstacleLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  obstructionCheckHalfExtents: {x: 0.5, y: 1, z: 0.5}
+  maxSpawnAttempts: 20
 --- !u!114 &2534427879259421092
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -609,11 +631,20 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::LobbyPlayerDisplay
   ShowTopMostFoldoutHeaderGroup: 1
   playerLabelText: {fileID: 8556167145981182264}
+  labelContainer: {fileID: 0}
   labelFormat: Jugador {0}
+  slotColors:
+  - {r: 1, g: 0.3, b: 0.3, a: 1}
+  - {r: 0.3, g: 0.6, b: 1, a: 1}
+  - {r: 0.25, g: 0.85, b: 0.4, a: 1}
+  - {r: 1, g: 0.85, b: 0.2, a: 1}
   lobbySlotsObjectName: LobbySlots
   lobbySceneName: Lobby
   fallbackSlotOffset: 2
+  playerHeightOffset: 0
   lobbyScale: {x: 20, y: 20, z: 20}
+  podiumScale: {x: 1.5, y: 1.5, z: 1.5}
+  podiumSceneName: Podio
   restoreOriginalScaleOnExit: 1
 --- !u!143 &8444772134445848065
 CharacterController:

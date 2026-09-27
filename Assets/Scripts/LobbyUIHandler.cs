@@ -29,6 +29,9 @@ public class LobbyUIHandler : MonoBehaviour
     [Tooltip("Boton para regresar a la escena de conexion.")]
     [SerializeField] private Button backButton;
 
+    [Tooltip("Botón del panel de IP: al pulsarlo copia la IP al portapapeles. Si se deja vacío se busca el Button en el panel de ipAddressText.")]
+    [SerializeField] private Button ipCopyButton;
+
     [Header("Scene Configuration")]
     [Tooltip("Nombre de la escena de juego principal a la que se cambiara al presionar Jugar.")]
     [SerializeField] private string mainSceneName = "MainScene";
@@ -55,6 +58,7 @@ public class LobbyUIHandler : MonoBehaviour
         UpdateConnectionIPUI();
         ConfigureStartButton();
         ConfigureBackButton();
+        ConfigureIpCopyButton();
     }
 
     /// <summary>
@@ -270,6 +274,45 @@ public class LobbyUIHandler : MonoBehaviour
 
         backButton.onClick.RemoveAllListeners();
         backButton.onClick.AddListener(OnBackButtonClicked);
+    }
+
+    /// <summary>
+    /// Configura el boton del panel de IP para copiar la IP al portapapeles.
+    /// </summary>
+    private void ConfigureIpCopyButton()
+    {
+        if (ipCopyButton == null && ipAddressText != null)
+        {
+            GameObject panel = ipAddressText.gameObject;
+            ipCopyButton = panel.GetComponent<Button>();
+            if (ipCopyButton == null && panel.transform.parent != null)
+                ipCopyButton = panel.transform.parent.GetComponent<Button>();
+            if (ipCopyButton == null && panel.transform.parent != null)
+                ipCopyButton = panel.transform.parent.GetComponentInChildren<Button>(true);
+        }
+
+        if (ipCopyButton == null) return;
+
+        ipCopyButton.onClick.RemoveAllListeners();
+        ipCopyButton.onClick.AddListener(CopyIpToClipboard);
+    }
+
+    /// <summary>
+    /// Copia el texto visible de la IP al portapapeles del sistema.
+    /// </summary>
+    public void CopyIpToClipboard()
+    {
+        if (ipAddressText == null) return;
+
+        string ip = ipAddressText.text;
+        if (string.IsNullOrWhiteSpace(ip))
+        {
+            Debug.LogWarning("[LobbyUIHandler] No hay IP para copiar (texto vacío).");
+            return;
+        }
+
+        GUIUtility.systemCopyBuffer = ip.Trim();
+        Debug.Log($"[LobbyUIHandler] IP copiada al portapapeles: {ip.Trim()}");
     }
 
     /// <summary>

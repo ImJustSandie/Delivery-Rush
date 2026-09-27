@@ -15,6 +15,20 @@ public class CollectibleSpawnManager : MonoBehaviour
     [Tooltip("Prefab del recolectable (debe tener NetworkObject + InteractableCube). Asignar Object.prefab.")]
     [SerializeField] private NetworkObject collectiblePrefab;
 
+    [Header("Power-Up (raro)")]
+    [Tooltip("Prefab del power-up (debe tener NetworkObject + PowerUpCube). Misma lógica de spawn que el objeto normal.")]
+    [SerializeField] private NetworkObject powerUpPrefab;
+    [Tooltip("Probabilidad de que cada spawn sea un power-up en vez de un objeto normal (0.1 = 10%).")]
+    [Range(0f, 1f)]
+    [SerializeField] private float powerUpChance = 0.1f;
+    [Tooltip("Número máximo de power-ups simultáneos en escena (además del límite total).")]
+    [SerializeField] private int maxPowerUps = 2;
+    [Tooltip("Probabilidad de que un power-up RECOGIDO sea de ralentizar (SlowOthers). El resto será de velocidad (BoostSelf). El sorteo ocurre al recoger, no al usar. Ej: 0.5 = mitad y mitad.")]
+    [Range(0f, 1f)]
+    [SerializeField] private float slowPowerUpChance = 0.5f;
+
+    public float SlowPowerUpChance => slowPowerUpChance;
+
     [Header("Límites")]
     [Tooltip("Número máximo de instancias simultáneas en escena. No se generan más si se alcanza.")]
     [SerializeField] private int maxInstances = 5;
@@ -40,7 +54,16 @@ public class CollectibleSpawnManager : MonoBehaviour
     [Tooltip("Offset vertical al instanciar para evitar solapamiento con el suelo.")]
     [SerializeField] private float spawnHeightOffset = 0.5f;
 
+    [Header("Validación de obstáculos")]
+    [Tooltip("Capas consideradas obstáculos (edificios, muros, etc.). El punto de spawn se descarta si cae dentro de un Collider sólido de estas capas. IMPORTANTE: excluye la capa del suelo si el chequeo toca el piso, o usa una capa propia para edificios/obstáculos.")]
+    [SerializeField] private LayerMask obstacleLayers = ~0;
+    [Tooltip("Medio tamaño de la caja de comprobación (debe aproximar el tamaño del recolectable).")]
+    [SerializeField] private Vector3 obstructionCheckHalfExtents = new Vector3(0.4f, 0.4f, 0.4f);
+    [Tooltip("Número máximo de posiciones aleatorias a probar antes de rendirse y no spawnear (evita spawnear dentro de edificios/obstáculos).")]
+    [SerializeField] private int maxSpawnAttempts = 10;
+
     private readonly HashSet<InteractableCube> trackedInstances = new HashSet<InteractableCube>();
+    private readonly HashSet<PowerUpCube> trackedPowerUps = new HashSet<PowerUpCube>();
     private readonly List<CollectibleSpawner> registeredSpawners = new List<CollectibleSpawner>();
 
     private float nextAutoSpawnTime;
@@ -51,12 +74,23 @@ public class CollectibleSpawnManager : MonoBehaviour
         {
             // Limpieza de referencias nulas (objetos destruidos sin Unregister)
             trackedInstances.RemoveWhere(c => c == null);
-            return trackedInstances.Count;
+            trackedPowerUps.RemoveWhere(p => p == null);
+            return trackedInstances.Count + trackedPowerUps.Count;
+        }
+    }
+
+    public int ActivePowerUpCount
+    {
+        get
+        {
+            trackedPowerUps.RemoveWhere(p => p == null);
+            return trackedPowerUps.Count;
         }
     }
 
     public int MaxInstances => maxInstances;
     public bool CanSpawn => ActiveCount < maxInstances;
+    public bool CanSpawnPowerUp => CanSpawn && ActivePowerUpCount < maxPowerUps;
     public int RemainingSlots => Mathf.Max(0, maxInstances - ActiveCount);
 
     private void Awake()
@@ -142,6 +176,13 @@ public class CollectibleSpawnManager : MonoBehaviour
         }
     }
 
+    /// <summary>Registra un power-up instanciado.</summary>
+    public void Register(PowerUpCube powerUp)
+    {
+        if (powerUp == null) return;
+        trackedPowerUps.Add(powerUp);
+    }
+
     public void Unregister(InteractableCube cube)
     {
         if (cube == null) return;
@@ -163,6 +204,22 @@ public class CollectibleSpawnManager : MonoBehaviour
         }
     }
 
+    /// <summary>Desregistra un power-up recolectado/destruido y repone otro objeto.</summary>
+    public void Unregister(PowerUpCube powerUp)
+    {
+        if (powerUp == null) return;
+        bool removed = trackedPowerUps.Remove(powerUp);
+        if (removed && respawnOnCollected && CanSpawn && IsServer)
+        {
+            if (respawnDelay <= 0f)
+                TrySpawnRandom();
+            else
+                Invoke(nameof(TrySpawnRandomDelayed), respawnDelay);
+            if (autoSpawnInterval > 0f)
+                nextAutoSpawnTime = Time.time + autoSpawnInterval;
+        }
+    }
+
     private bool IsServer
     {
         get
@@ -178,7 +235,7 @@ public class CollectibleSpawnManager : MonoBehaviour
         TrySpawnRandom();
     }
 
-    /// <summary>Busca cubos ya colocados manualmente en la escena para contarlos.</summary>
+    /// <summary>Busca cubos y power-ups ya colocados manualmente en la escena para contarlos.</summary>
     private void RegisterScenePlacedInstances()
     {
         foreach (InteractableCube cube in FindObjectsByType<InteractableCube>(FindObjectsSortMode.None))
@@ -187,6 +244,11 @@ public class CollectibleSpawnManager : MonoBehaviour
             // Evitar duplicar
             if (!trackedInstances.Contains(cube))
                 trackedInstances.Add(cube);
+        }
+        foreach (PowerUpCube powerUp in FindObjectsByType<PowerUpCube>(FindObjectsSortMode.None))
+        {
+            if (!trackedPowerUps.Contains(powerUp))
+                trackedPowerUps.Add(powerUp);
         }
     }
 
@@ -206,8 +268,71 @@ public class CollectibleSpawnManager : MonoBehaviour
     // ── API de spawn ───────────────────────────────────────────────────────
 
     /// <summary>
+    /// Devuelve true si la posición cae dentro de un Collider sólido (no Trigger)
+    /// de las <see cref="obstacleLayers"/>. Usa OverlapBox con
+    /// <see cref="QueryTriggerInteraction.Ignore"/> para que las hitbox triggers
+    /// de los spawners no bloqueen el spawn.
+    /// </summary>
+    public bool IsPositionBlocked(Vector3 position)
+    {
+        Collider[] hits = Physics.OverlapBox(
+            position,
+            obstructionCheckHalfExtents,
+            Quaternion.identity,
+            obstacleLayers,
+            QueryTriggerInteraction.Ignore);
+        return hits != null && hits.Length > 0;
+    }
+
+    /// <summary>
+    /// Decide si este spawn debe ser power-up (10% por defecto) o cubo normal.
+    /// Respeta el límite de power-ups: si está lleno, sale cubo normal.
+    /// </summary>
+    private bool RollIsPowerUp()
+    {
+        if (powerUpPrefab == null) return false;
+        if (ActivePowerUpCount >= maxPowerUps) return false;
+        return UnityEngine.Random.value < powerUpChance;
+    }
+
+    /// <summary>Instancia el prefab elegido (power-up o normal) y lo registra. Asume límite y bloqueo ya validados.</summary>
+    private bool SpawnChosenPrefab(Vector3 position, Quaternion rotation, bool isPowerUp)
+    {
+        NetworkObject prefabToSpawn = isPowerUp ? powerUpPrefab : collectiblePrefab;
+        if (prefabToSpawn == null)
+        {
+            Debug.LogWarning("[CollectibleSpawnManager] Prefab no asignado (revisa collectiblePrefab / powerUpPrefab).");
+            return false;
+        }
+
+        NetworkObject instance = Instantiate(prefabToSpawn, position, rotation);
+        if (instance != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+        {
+            instance.Spawn(true);
+        }
+
+        if (isPowerUp)
+        {
+            PowerUpCube powerUp = instance.GetComponent<PowerUpCube>();
+            if (powerUp != null && !trackedPowerUps.Contains(powerUp))
+                trackedPowerUps.Add(powerUp);
+        }
+        else
+        {
+            // El InteractableCube se registrará solo en OnNetworkSpawn/OnEnable;
+            // por si el prefab no llama a Register (p.ej. sin red), lo registramos aquí
+            InteractableCube cube = instance.GetComponent<InteractableCube>();
+            if (cube != null && !trackedInstances.Contains(cube))
+                trackedInstances.Add(cube);
+        }
+        return true;
+    }
+
+    /// <summary>
     /// Intenta instanciar en una posición/rotación concreta.
     /// Respeta el límite y solo funciona en servidor.
+    /// Descarta la posición si está dentro de un obstáculo.
+    /// Cada spawn tiene <see cref="powerUpChance"/> de ser power-up.
     /// </summary>
     public bool TrySpawnAt(Vector3 position, Quaternion rotation)
     {
@@ -227,56 +352,77 @@ public class CollectibleSpawnManager : MonoBehaviour
 
         position.y += spawnHeightOffset;
 
-        NetworkObject instance = Instantiate(collectiblePrefab, position, rotation);
-        // Si tiene NetworkObject, spawnear por Netcode; si no, queda como objeto local
-        if (instance != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+        // Condicional: no generar dentro de edificios ni obstáculos.
+        // Si la posición cae dentro de una caja de colisión sólida, se descarta.
+        if (IsPositionBlocked(position))
         {
-            instance.Spawn(true);
+            Debug.Log($"[CollectibleSpawnManager] Spawn descartado en {position}: dentro de un obstáculo.");
+            return false;
         }
 
-        // El InteractableCube se registrará solo en OnNetworkSpawn/OnEnable;
-        // por si el prefab no llama a Register (p.ej. sin red), lo registramos aquí
-        InteractableCube cube = instance.GetComponent<InteractableCube>();
-        if (cube != null && !trackedInstances.Contains(cube))
-            trackedInstances.Add(cube);
-
-        return true;
+        return SpawnChosenPrefab(position, rotation, RollIsPowerUp());
     }
 
-    /// <summary>Intenta spawnear en un spawnPoint aleatorio o en un punto aleatorio dentro de una hitbox.</summary>
+    /// <summary>Intenta spawnear en un spawnPoint aleatorio o en un punto aleatorio dentro de una hitbox. Reintenta en otro sitio si cae dentro de un obstáculo.</summary>
     public bool TrySpawnRandom()
     {
         if (!CanSpawn) return false;
 
+        int attempts = Mathf.Max(1, maxSpawnAttempts);
+
         // Prioridad 1: spawnPoints fijos (posición exacta)
         if (spawnPoints != null && spawnPoints.Length > 0)
         {
-            Transform chosen = spawnPoints[Random.Range(0, spawnPoints.Length)];
-            Vector3 pos = chosen != null ? chosen.position : transform.position;
-            Quaternion rot = chosen != null ? chosen.rotation : Quaternion.identity;
-            return TrySpawnAt(pos, rot);
+            for (int i = 0; i < attempts; i++)
+            {
+                Transform chosen = spawnPoints[Random.Range(0, spawnPoints.Length)];
+                Vector3 pos = chosen != null ? chosen.position : transform.position;
+                Quaternion rot = chosen != null ? chosen.rotation : Quaternion.identity;
+                // Probar otro punto si este está dentro de un obstáculo
+                Vector3 testPos = pos + Vector3.up * spawnHeightOffset;
+                if (IsPositionBlocked(testPos)) continue;
+                if (TrySpawnAt(pos, rot)) return true;
+            }
+            Debug.Log($"[CollectibleSpawnManager] No se encontró punto libre tras {attempts} intentos (todos dentro de obstáculos).");
+            return false;
         }
 
         // Prioridad 2: punto aleatorio dentro del volumen de un spawner
         if (useSpawnersAsSpawnPoints && registeredSpawners.Count > 0)
         {
-            CollectibleSpawner s = registeredSpawners[Random.Range(0, registeredSpawners.Count)];
-            if (s != null)
-                return RequestSpawnFromSpawner(s);
+            for (int i = 0; i < attempts; i++)
+            {
+                CollectibleSpawner s = registeredSpawners[Random.Range(0, registeredSpawners.Count)];
+                if (s == null) continue;
+                // RequestSpawnFromSpawner ya reintenta posiciones dentro del volumen,
+                // aquí variamos además de spawner para cubrir mejor el mapa.
+                if (RequestSpawnFromSpawner(s)) return true;
+            }
+            Debug.Log($"[CollectibleSpawnManager] No se encontró punto libre en spawners tras {attempts} intentos.");
+            return false;
         }
 
         return TrySpawnAt(transform.position, Quaternion.identity);
     }
 
-    /// <summary>Solicitado por un CollectibleSpawner (hitbox). Genera en punto aleatorio dentro del volumen.</summary>
+    /// <summary>Solicitado por un CollectibleSpawner (hitbox). Genera en punto aleatorio dentro del volumen, reintentando en otro sitio si cae dentro de un obstáculo.</summary>
     public bool RequestSpawnFromSpawner(CollectibleSpawner spawner)
     {
         if (spawner == null) return false;
         if (!CanSpawn) return false;
-        Vector3 pos = spawner.GetRandomSpawnPosition();
+        int attempts = Mathf.Max(1, maxSpawnAttempts);
         Quaternion rot = spawner.GetSpawnRotation();
-        // Punto ya está dentro del volumen, no sumar spawnHeightOffset extra
-        return TrySpawnAtExact(pos, rot);
+        for (int i = 0; i < attempts; i++)
+        {
+            Vector3 pos = spawner.GetRandomSpawnPosition();
+            // Condicional: si está dentro de una caja de colisión, generar en otro sitio
+            if (IsPositionBlocked(pos)) continue;
+            // Punto ya está dentro del volumen, no sumar spawnHeightOffset extra
+            if (TrySpawnAtExact(pos, rot)) return true;
+            else return false; // límite alcanzado o error: no seguir intentando
+        }
+        Debug.Log($"[CollectibleSpawnManager] Spawn de {spawner.name} descartado tras {attempts} intentos: todos dentro de obstáculos.");
+        return false;
     }
 
     private bool TrySpawnAtExact(Vector3 position, Quaternion rotation)
@@ -286,18 +432,18 @@ public class CollectibleSpawnManager : MonoBehaviour
             if (NetworkManager.Singleton != null) return false;
         }
         if (!CanSpawn) return false;
-        if (collectiblePrefab == null)
+        if (collectiblePrefab == null && powerUpPrefab == null)
         {
-            Debug.LogWarning("[CollectibleSpawnManager] collectiblePrefab no asignado.");
+            Debug.LogWarning("[CollectibleSpawnManager] Ningún prefab asignado (collectiblePrefab / powerUpPrefab).");
             return false;
         }
-        NetworkObject instance = Instantiate(collectiblePrefab, position, rotation);
-        if (instance != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
-            instance.Spawn(true);
-        InteractableCube cube = instance.GetComponent<InteractableCube>();
-        if (cube != null && !trackedInstances.Contains(cube))
-            trackedInstances.Add(cube);
-        return true;
+        // Condicional: no generar dentro de edificios ni obstáculos
+        if (IsPositionBlocked(position))
+        {
+            Debug.Log($"[CollectibleSpawnManager] Spawn descartado en {position}: dentro de un obstáculo.");
+            return false;
+        }
+        return SpawnChosenPrefab(position, rotation, RollIsPowerUp());
     }
 
     private Transform GetRandomSpawnPoint()
@@ -335,9 +481,9 @@ public class CollectibleSpawnManager : MonoBehaviour
             }
         }
 
-        if (collectiblePrefab == null)
+        if (collectiblePrefab == null && powerUpPrefab == null)
         {
-            Debug.LogError("[CollectibleSpawnManager] collectiblePrefab no asignado. Asigna Object.prefab en el Inspector -> no se puede spawnear.");
+            Debug.LogError("[CollectibleSpawnManager] Ningún prefab asignado. Asigna Object.prefab en collectiblePrefab y/o powerUpPrefab -> no se puede spawnear.");
             return;
         }
 
@@ -367,8 +513,17 @@ public class CollectibleSpawnManager : MonoBehaviour
     private void OnValidate()
     {
         if (maxInstances < 1) maxInstances = 1;
+        if (maxPowerUps < 0) maxPowerUps = 0;
+        if (powerUpChance < 0f) powerUpChance = 0f;
+        if (powerUpChance > 1f) powerUpChance = 1f;
+        if (slowPowerUpChance < 0f) slowPowerUpChance = 0f;
+        if (slowPowerUpChance > 1f) slowPowerUpChance = 1f;
         if (initialSpawnCount < 0) initialSpawnCount = 0;
         if (autoSpawnInterval < 0f) autoSpawnInterval = 0f;
+        if (maxSpawnAttempts < 1) maxSpawnAttempts = 1;
+        if (obstructionCheckHalfExtents.x < 0.01f) obstructionCheckHalfExtents.x = 0.01f;
+        if (obstructionCheckHalfExtents.y < 0.01f) obstructionCheckHalfExtents.y = 0.01f;
+        if (obstructionCheckHalfExtents.z < 0.01f) obstructionCheckHalfExtents.z = 0.01f;
     }
 #endif
 }
