@@ -13,36 +13,87 @@ MonoBehaviour:
   m_Name: CharacterSkinDatabase
   m_EditorClassIdentifier: Assembly-CSharp::CharacterSkinDatabase
   hatSkins:
-  - id: gorra_01
+  - id: gorra_Didi
     displayName: 
     material: {fileID: 2100000, guid: 8245ac975c6733646a150eda7ff069d0, type: 2}
-  - id: gorra_02
+  - id: gorra_Uber
     displayName: 
     material: {fileID: 2100000, guid: f991cea0bea3f1b4caa11d22ca67f6d5, type: 2}
-  - id: gorra_03
+  - id: gorra_Rappi
     displayName: 
     material: {fileID: 2100000, guid: d984c373f7bbf234898ad417fb963654, type: 2}
+  - id: gorra_Vene
+    displayName: 
+    material: {fileID: 2100000, guid: 6d967df4ea24731459cd52cc08661413, type: 2}
+  - id: gorra_Copper
+    displayName: 
+    material: {fileID: 2100000, guid: e5687bbd2cd1af94c8171eee8c8bb5f4, type: 2}
+  - id: gorra_Silver
+    displayName: 
+    material: {fileID: 2100000, guid: 547bf2c6be54bf749ac31b65cb426c09, type: 2}
+  - id: gorra_Gold
+    displayName: 
+    material: {fileID: 2100000, guid: ebb218cac8e4f844ab8f88613d00ae0a, type: 2}
   bodySkins:
-  - id: chaleco_01
+  - id: chaleco_Didi
     displayName: 
     material: {fileID: 2100000, guid: 8245ac975c6733646a150eda7ff069d0, type: 2}
-  - id: chaleco_02
+  - id: chaleco_Uber
     displayName: 
     material: {fileID: 2100000, guid: f991cea0bea3f1b4caa11d22ca67f6d5, type: 2}
-  - id: chaleco_03
+  - id: chaleco_Rappi
     displayName: 
     material: {fileID: 2100000, guid: d984c373f7bbf234898ad417fb963654, type: 2}
+  - id: chaleco_Vene
+    displayName: 
+    material: {fileID: 2100000, guid: 6d967df4ea24731459cd52cc08661413, type: 2}
+  - id: chaleco_Copper
+    displayName: 
+    material: {fileID: 2100000, guid: e5687bbd2cd1af94c8171eee8c8bb5f4, type: 2}
+  - id: chaleco_Silver
+    displayName: 
+    material: {fileID: 2100000, guid: 547bf2c6be54bf749ac31b65cb426c09, type: 2}
+  - id: chaleco_Gold
+    displayName: 
+    material: {fileID: 2100000, guid: ebb218cac8e4f844ab8f88613d00ae0a, type: 2}
   bagSkins:
-  - id: maleta_01
+  - id: maleta_Didi
     displayName: 
     material: {fileID: 2100000, guid: 8245ac975c6733646a150eda7ff069d0, type: 2}
-  - id: maleta_02
+  - id: maleta_Uber
     displayName: 
     material: {fileID: 2100000, guid: f991cea0bea3f1b4caa11d22ca67f6d5, type: 2}
-  - id: maleta_03
+  - id: maleta_Rappi
     displayName: 
     material: {fileID: 2100000, guid: d984c373f7bbf234898ad417fb963654, type: 2}
+  - id: maleta_Vene
+    displayName: 
+    material: {fileID: 2100000, guid: 6d967df4ea24731459cd52cc08661413, type: 2}
+  - id: maleta_Copper
+    displayName: 
+    material: {fileID: 2100000, guid: e5687bbd2cd1af94c8171eee8c8bb5f4, type: 2}
+  - id: maleta_Silver
+    displayName: 
+    material: {fileID: 2100000, guid: 547bf2c6be54bf749ac31b65cb426c09, type: 2}
+  - id: maleta_Gold
+    displayName: 
+    material: {fileID: 2100000, guid: ebb218cac8e4f844ab8f88613d00ae0a, type: 2}
   skinSkins:
-  - id: piel_01
+  - id: piel_Clara
+    displayName: 
+    material: {fileID: 2100000, guid: daf0484ad073cb348b6bd35d0b033690, type: 2}
+  - id: piel_Morena
     displayName: 
     material: {fileID: 2100000, guid: 22fbc1b51214c6d40842085901e3d2d0, type: 2}
+  - id: piel_Negra
+    displayName: 
+    material: {fileID: 2100000, guid: 878d3c944d65b16469db7b945aed8451, type: 2}
+  - id: piel_Copper
+    displayName: 
+    material: {fileID: 2100000, guid: 7b37108f584183c42800af8b0aaed75c, type: 2}
+  - id: piel_Silver
+    displayName: 
+    material: {fileID: 2100000, guid: d015a7884531345489e0fa53143fee26, type: 2}
+  - id: piel_Gold
+    displayName: 
+    material: {fileID: 2100000, guid: a6a35592c2bc20f4093d4c37550de039, type: 2}

@@ -151,7 +151,7 @@ MonoBehaviour:
   collectiblePrefab: {fileID: 2989246670604433347, guid: 06515c82f3956f14e834e0850fd9ce4c, type: 3}
   maxInstances: 50
   spawnOnStart: 1
-  initialSpawnCount: 25
+  initialSpawnCount: 50
   autoSpawnInterval: 0
   useSpawnersAsSpawnPoints: 1
   respawnOnCollected: 1
@@ -1947,7 +1947,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0.70711, y: 0.73, z: 0.70712}
-  m_LocalScale: {x: 175.06511, y: 0.16787, z: 177.95586}
+  m_LocalScale: {x: 100, y: 0.09664947, z: 100}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}

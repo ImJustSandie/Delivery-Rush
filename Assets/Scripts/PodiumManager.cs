@@ -189,8 +189,14 @@ public class PodiumManager : MonoBehaviour
                 string playerName = pm.TryGetComponent<NetworkPlayerSkinSynchronizer>(out var skinSync) && !string.IsNullOrWhiteSpace(skinSync.PlayerName)
                     ? skinSync.PlayerName 
                     : pm.name.Replace("(Clone)", "");
-                int playerSlot = GetPlayerSlotIndex(pm) + 1;
+                int slotIndex = GetPlayerSlotIndex(pm);
+                int playerSlot = slotIndex + 1;
                 rankLabels[i].text = $"P{playerSlot}: {playerName}\nPuntos: {pm.Score}";
+
+                if (pm.TryGetComponent<LobbyPlayerDisplay>(out var display))
+                {
+                    rankLabels[i].color = display.GetSlotColor(slotIndex);
+                }
             }
         }
 

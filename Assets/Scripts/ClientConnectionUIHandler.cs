@@ -36,6 +36,12 @@ public class ClientConnectionUIHandler : MonoBehaviour
     [Tooltip("Nombre de la escena anterior a la que se regresara al presionar Volver.")]
     [SerializeField] private string previousSceneName = "ConnectionScene";
 
+    [Header("Animation Settings")]
+    [Tooltip("Intervalo de tiempo en segundos para la animacion de tres puntos.")]
+    [SerializeField] private float dotAnimationInterval = 0.5f;
+
+    private Coroutine connectingAnimationCoroutine;
+
     private void Start()
     {
         ConfigureButtons();
@@ -45,6 +51,7 @@ public class ClientConnectionUIHandler : MonoBehaviour
 
     private void OnDestroy()
     {
+        StopConnectingAnimation();
         UnsubscribeFromNetworkEvents();
     }
 
@@ -127,10 +134,13 @@ public class ClientConnectionUIHandler : MonoBehaviour
             NetworkManager.Singleton.Shutdown();
         }
 
-        UpdateStatus($"Conectando a {targetIP}:{port}...");
         bool success = NetworkManager.Singleton.StartClient();
 
-        if (!success)
+        if (success)
+        {
+            StartConnectingAnimation($"Conectando a {targetIP}:{port}");
+        }
+        else
         {
             Debug.LogWarning("[ClientConnectionUIHandler] Fallo al iniciar el cliente.");
             UpdateStatus("Error al iniciar el cliente.");
@@ -143,6 +153,8 @@ public class ClientConnectionUIHandler : MonoBehaviour
     public void OnBackButtonClicked()
     {
         Debug.Log($"[ClientConnectionUIHandler] Regresando a la escena previa: {previousSceneName}");
+
+        StopConnectingAnimation();
 
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
         {
@@ -164,6 +176,7 @@ public class ClientConnectionUIHandler : MonoBehaviour
         if (NetworkManager.Singleton != null && clientId == NetworkManager.Singleton.LocalClientId)
         {
             Debug.Log($"[ClientConnectionUIHandler] Cliente conectado exitosamente con ID: {clientId}");
+            StopConnectingAnimation();
             UpdateStatus("¡Conexion establecida!");
         }
     }
@@ -173,12 +186,46 @@ public class ClientConnectionUIHandler : MonoBehaviour
         if (NetworkManager.Singleton != null && clientId == NetworkManager.Singleton.LocalClientId)
         {
             Debug.LogWarning("[ClientConnectionUIHandler] Desconectado o la conexion fallo.");
+            StopConnectingAnimation();
             UpdateStatus("Conexion fallida o desconectada del host.");
+        }
+    }
+
+    private void StartConnectingAnimation(string baseMessage)
+    {
+        StopConnectingAnimation();
+        connectingAnimationCoroutine = StartCoroutine(AnimateConnectingText(baseMessage));
+    }
+
+    private void StopConnectingAnimation()
+    {
+        if (connectingAnimationCoroutine != null)
+        {
+            StopCoroutine(connectingAnimationCoroutine);
+            connectingAnimationCoroutine = null;
+        }
+    }
+
+    private System.Collections.IEnumerator AnimateConnectingText(string baseMessage)
+    {
+        int dotCount = 0;
+
+        while (true)
+        {
+            string dots = new string('.', dotCount);
+            if (statusText != null)
+            {
+                statusText.text = $"{baseMessage}{dots}";
+            }
+
+            dotCount = (dotCount + 1) % 4;
+            yield return new WaitForSeconds(dotAnimationInterval);
         }
     }
 
     private void UpdateStatus(string message)
     {
+        StopConnectingAnimation();
         if (statusText != null)
         {
             statusText.text = message;

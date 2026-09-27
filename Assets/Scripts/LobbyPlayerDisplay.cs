@@ -13,8 +13,21 @@ public class LobbyPlayerDisplay : NetworkBehaviour
     [Tooltip("Referencia al componente TextMeshPro que muestra el nombre/número sobre el jugador.")]
     [SerializeField] private TMP_Text playerLabelText;
 
+    [Tooltip("Referencia opcional al panel/contenedor decorativo del texto para rotar todo el conjunto hacia la cámara.")]
+    [SerializeField] private Transform labelContainer;
+
     [Tooltip("Formato del texto. {0} será reemplazado por el número de jugador (OwnerClientId + 1).")]
     [SerializeField] private string labelFormat = "Jugador {0}";
+
+    [Header("Slot Colors")]
+    [Tooltip("Colores asignados al nombre del jugador según su posición/slot (Slot 0 = Jugador 1, Slot 1 = Jugador 2, etc.).")]
+    [SerializeField] private Color[] slotColors = new Color[]
+    {
+        new Color(1.0f, 0.3f, 0.3f, 1f),   // Jugador 1: Rojo (#FF4D4D)
+        new Color(0.3f, 0.6f, 1.0f, 1f),   // Jugador 2: Azul (#4D99FF)
+        new Color(0.25f, 0.85f, 0.4f, 1f), // Jugador 3: Verde (#40D966)
+        new Color(1.0f, 0.85f, 0.2f, 1f)   // Jugador 4: Amarillo (#FFD933)
+    };
 
     [Header("Lobby Positioning")]
     [Tooltip("Nombre del objeto padre en el Lobby que contiene las posiciones de los slots.")]
@@ -25,6 +38,9 @@ public class LobbyPlayerDisplay : NetworkBehaviour
 
     [Tooltip("Offset horizontal si no se encuentran los LobbySlots en la escena.")]
     [SerializeField] private float fallbackSlotOffset = 2.0f;
+
+    [Tooltip("Altura base sobre el slot donde aparece el jugador en el lobby.")]
+    [SerializeField] private float playerHeightOffset = 0f;
 
     [Header("Lobby Scale")]
     [Tooltip("Escala personalizada que adoptará el personaje mientras esté en la escena de Lobby.")]
@@ -117,6 +133,7 @@ public class LobbyPlayerDisplay : NetworkBehaviour
     private void OnSlotIndexChanged(int previous, int current)
     {
         UpdatePlayerLabel();
+        positionApplied = false;
         TryUpdateLobbyPosition();
     }
 
@@ -180,11 +197,13 @@ public class LobbyPlayerDisplay : NetworkBehaviour
 
     private void LateUpdate()
     {
-        if (playerLabelText == null) return;
+        if (playerLabelText == null && labelContainer == null) return;
         Camera cam = ResolveCamera();
         if (cam == null) return;
 
-        // Solo en Podio el texto debe mirar siempre al frente de la cámara (paralelo al plano de vista)
+        Transform targetTransform = labelContainer != null ? labelContainer : playerLabelText.transform;
+
+        // Solo en Podio el texto/panel debe mirar siempre al frente de la cámara (paralelo al plano de vista)
         // En Lobby/MainScene mantiene el billboard clásico hacia la posición de la cámara
         string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
         bool isPodio = IsPodiumScene(sceneName);
@@ -192,13 +211,13 @@ public class LobbyPlayerDisplay : NetworkBehaviour
         if (isPodio)
         {
             // Frente de cámara, independiente de la dirección final del jugador tras saltos
-            playerLabelText.transform.rotation = Quaternion.LookRotation(-cam.transform.forward, cam.transform.up);
+            targetTransform.rotation = Quaternion.LookRotation(-cam.transform.forward, cam.transform.up);
         }
         else
         {
-            Vector3 dir = playerLabelText.transform.position - cam.transform.position;
+            Vector3 dir = targetTransform.position - cam.transform.position;
             if (dir.sqrMagnitude > 0.0001f)
-                playerLabelText.transform.rotation = Quaternion.LookRotation(dir, Vector3.up);
+                targetTransform.rotation = Quaternion.LookRotation(dir, Vector3.up);
         }
     }
 
@@ -265,13 +284,27 @@ public class LobbyPlayerDisplay : NetworkBehaviour
     }
 
     /// <summary>
-    /// Establece el texto del identificador del jugador (ej. "Jugador 1", "Jugador 2" o nombre personalizado).
+    /// Obtiene el color correspondiente al slot del jugador.
+    /// </summary>
+    public Color GetSlotColor(int slotIndex)
+    {
+        if (slotColors != null && slotColors.Length > 0)
+        {
+            int index = Mathf.Clamp(slotIndex, 0, slotColors.Length - 1);
+            return slotColors[index];
+        }
+        return Color.white;
+    }
+
+    /// <summary>
+    /// Establece el texto y color del identificador del jugador (ej. "Jugador 1", "Jugador 2" o nombre personalizado).
     /// </summary>
     public void UpdatePlayerLabel()
     {
         if (playerLabelText == null) return;
 
-        int playerNumber = GetSlotIndex() + 1;
+        int slotIndex = GetSlotIndex();
+        int playerNumber = slotIndex + 1;
         NetworkPlayerSkinSynchronizer skinSync = GetComponent<NetworkPlayerSkinSynchronizer>();
         string customName = "";
 
@@ -292,10 +325,14 @@ public class LobbyPlayerDisplay : NetworkBehaviour
         {
             playerLabelText.text = string.Format(labelFormat, playerNumber);
         }
+
+        // Asignar el color correspondiente a la posición/slot del jugador
+        playerLabelText.color = GetSlotColor(slotIndex);
     }
 
     /// <summary>
     /// Intenta posicionar al jugador en su slot correspondiente dentro del Lobby.
+    /// Toma las coordenadas exactas (posición y rotación) del Transform del slot, similar a los pilares del Podio.
     /// </summary>
     public bool TryUpdateLobbyPosition()
     {
@@ -306,39 +343,68 @@ public class LobbyPlayerDisplay : NetworkBehaviour
         Vector3 targetPosition = Vector3.zero;
         Quaternion targetRotation = Quaternion.identity;
         bool foundSlot = false;
+        Transform slotTransform = null;
 
         int slotIndex = GetSlotIndex();
 
-        // 1. Intentar buscar dentro del contenedor principal (LobbySlots)
+        // Nombres basados en índice 0 (ej. Slot_0, Slot0)
+        string[] zeroBasedNames = new string[]
+        {
+            $"Slot_{slotIndex}",
+            $"Slot{slotIndex}",
+            $"Slot {slotIndex}",
+            $"LobbySlot_{slotIndex}",
+            $"LobbySlot{slotIndex}",
+            $"LobbySlot {slotIndex}",
+            $"Pillar_{slotIndex}",
+            $"Pillar{slotIndex}",
+            $"Pillar {slotIndex}"
+        };
+
+        // Nombres basados en índice 1 (ej. Slot_1, Slot1)
+        string[] oneBasedNames = new string[]
+        {
+            $"Slot_{slotIndex + 1}",
+            $"Slot{slotIndex + 1}",
+            $"Slot {slotIndex + 1}",
+            $"LobbySlot_{slotIndex + 1}",
+            $"LobbySlot{slotIndex + 1}",
+            $"LobbySlot {slotIndex + 1}",
+            $"Pillar_{slotIndex + 1}",
+            $"Pillar{slotIndex + 1}",
+            $"Pillar {slotIndex + 1}"
+        };
+
+        // 1. Buscar dentro del contenedor LobbySlots por nombre 0-based primero
         if (slotsContainer != null)
         {
-            if (slotsContainer.transform.childCount > slotIndex)
+            foreach (string name in zeroBasedNames)
             {
-                Transform slot = slotsContainer.transform.GetChild(slotIndex);
-                targetPosition = slot.position;
-                targetRotation = slot.rotation;
+                Transform t = slotsContainer.transform.Find(name);
+                if (t != null)
+                {
+                    slotTransform = t;
+                    foundSlot = true;
+                    break;
+                }
+            }
+
+            // Si no coincide por nombre 0-based, probar por índice de hijo directo si existen suficientes hijos
+            if (!foundSlot && slotsContainer.transform.childCount > slotIndex)
+            {
+                slotTransform = slotsContainer.transform.GetChild(slotIndex);
                 foundSlot = true;
             }
-            else
-            {
-                string[] possibleChildNames = new string[]
-                {
-                    $"Slot_{slotIndex}",
-                    $"Slot_{slotIndex + 1}",
-                    $"Slot{slotIndex + 1}",
-                    $"Slot {slotIndex + 1}",
-                    $"LobbySlot_{slotIndex}",
-                    $"LobbySlot_{slotIndex + 1}",
-                    $"LobbySlot{slotIndex + 1}"
-                };
 
-                foreach (string cName in possibleChildNames)
+            // Si aún no se encuentra, probar por nombre 1-based
+            if (!foundSlot)
+            {
+                foreach (string name in oneBasedNames)
                 {
-                    Transform childSlot = slotsContainer.transform.Find(cName);
-                    if (childSlot != null)
+                    Transform t = slotsContainer.transform.Find(name);
+                    if (t != null)
                     {
-                        targetPosition = childSlot.position;
-                        targetRotation = childSlot.rotation;
+                        slotTransform = t;
                         foundSlot = true;
                         break;
                     }
@@ -346,36 +412,59 @@ public class LobbyPlayerDisplay : NetworkBehaviour
             }
         }
 
-        // 2. Intentar buscar por nombre de objeto global en la escena
+        // 2. Intentar buscar por objeto global en la escena si no se encontró en el contenedor
         if (!foundSlot)
         {
-            string[] possibleGlobalNames = new string[]
+            foreach (string name in zeroBasedNames)
             {
-                $"Slot_{slotIndex}",
-                $"Slot_{slotIndex + 1}",
-                $"Slot{slotIndex + 1}",
-                $"LobbySlot_{slotIndex}",
-                $"LobbySlot_{slotIndex + 1}",
-                $"LobbySlot{slotIndex + 1}"
-            };
-
-            foreach (string gName in possibleGlobalNames)
-            {
-                GameObject gObj = GameObject.Find(gName);
+                GameObject gObj = GameObject.Find(name);
                 if (gObj != null)
                 {
-                    targetPosition = gObj.transform.position;
-                    targetRotation = gObj.transform.rotation;
+                    slotTransform = gObj.transform;
                     foundSlot = true;
                     break;
                 }
             }
+
+            if (!foundSlot)
+            {
+                foreach (string name in oneBasedNames)
+                {
+                    GameObject gObj = GameObject.Find(name);
+                    if (gObj != null)
+                    {
+                        slotTransform = gObj.transform;
+                        foundSlot = true;
+                        break;
+                    }
+                }
+            }
         }
 
-        // 3. Fallback solo si no existe ningún slot configurado en la escena
-        if (!foundSlot)
+        // 3. Tomar coordenadas del slot encontrado (posición + rotación + offset de altura)
+        if (foundSlot && slotTransform != null)
         {
-            targetPosition = new Vector3(slotIndex * fallbackSlotOffset, 0f, 0f);
+            // Si el objeto slot tiene un escritorio hijo (ej. Cube) con un offset local aplicado en el Editor de Unity,
+            // tomar las coordenadas de ese objeto visual para alinear al personaje con el escritorio real.
+            Transform effectiveTransform = slotTransform;
+            Renderer childRenderer = slotTransform.GetComponentInChildren<Renderer>();
+            if (childRenderer != null && childRenderer.transform != slotTransform)
+            {
+                effectiveTransform = childRenderer.transform;
+            }
+            else if (slotTransform.childCount > 0)
+            {
+                effectiveTransform = slotTransform.GetChild(0);
+            }
+
+            targetPosition = effectiveTransform.position + Vector3.up * playerHeightOffset;
+            targetRotation = effectiveTransform.rotation;
+        }
+        else
+        {
+            // Fallback si no existe ningún slot configurado en la escena
+            targetPosition = new Vector3(slotIndex * fallbackSlotOffset, 0f, 0f) + Vector3.up * playerHeightOffset;
+            targetRotation = Quaternion.identity;
         }
 
         Debug.Log($"[LobbyPlayerDisplay] Jugador {OwnerClientId} (Slot {slotIndex}): Encontró slot real={foundSlot}, Posición={targetPosition}");
