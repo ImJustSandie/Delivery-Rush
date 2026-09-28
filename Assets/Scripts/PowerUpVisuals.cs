@@ -26,6 +26,8 @@ public class PowerUpVisuals : MonoBehaviour
     [SerializeField] private bool matchPlayerTransform = true;
     [Tooltip("Corrección de giro en grados si el modelo boost mira a otro eje que el jugador (ej: 90 si avanza de lado, 180 si va de espaldas).")]
     [SerializeField] private float boostYawOffset;
+    [Tooltip("Desplazamiento vertical (offset en Y) para la posición local del modelo boost.")]
+    [SerializeField] private float boostYOffset;
 
     private Renderer[] normalRenderers = System.Array.Empty<Renderer>();
     private Renderer[] boostRenderers = System.Array.Empty<Renderer>();
@@ -147,7 +149,7 @@ public class PowerUpVisuals : MonoBehaviour
     private void AlignBoostToPlayer()
     {
         if (!matchPlayerTransform || boostModel == null) return;
-        boostModel.transform.localPosition = Vector3.zero;
+        boostModel.transform.localPosition = new Vector3(0f, boostYOffset, 0f);
         boostModel.transform.localRotation = Quaternion.Euler(0f, boostYawOffset, 0f);
         boostModel.transform.localScale = Vector3.one;
     }

@@ -357,15 +357,15 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       propertyPath: m_LocalScale.x
-      value: 3
+      value: 2.5
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       propertyPath: m_LocalScale.y
-      value: 3
+      value: 2.5
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       propertyPath: m_LocalScale.z
-      value: 3
+      value: 2.5
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       propertyPath: m_LocalPosition.x
@@ -558,7 +558,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerMovementManager
   ShowTopMostFoldoutHeaderGroup: 1
   actionsAsset: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
-  moveSpeed: 20
+  moveSpeed: 16
   onInteract:
     m_PersistentCalls:
       m_Calls: []
@@ -570,7 +570,7 @@ MonoBehaviour:
   maxCollected: 5
   maxPowerUps: 2
   slowMultiplier: 0.5
-  boostMultiplier: 1.8
+  boostMultiplier: 1.5
   powerUpEffectDuration: 5
   powerUpButtonEffect: 1
   powerUpButton: {fileID: 0}
@@ -772,10 +772,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e8177e7cbc68c264a978b26ba5e8c74d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PowerUpVisuals
-  boostModel: {fileID: 6201794615766329114, guid: 0ff35766203d5654aa1df7413ecd03b2, type: 3}
+  boostModel: {fileID: 698388105266984164, guid: 6dd2643b71dd69043bfbf7a592172e5f, type: 3}
   slowMaterial: {fileID: 2100000, guid: 6de24b906416ac346aa4c1a92fee467c, type: 2}
   matchPlayerTransform: 1
   boostYawOffset: 0
+  boostYOffset: 0.4
 --- !u!137 &5541584880571454512 stripped
 SkinnedMeshRenderer:
   m_CorrespondingSourceObject: {fileID: 791774380976937438, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
