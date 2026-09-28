@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 public class CharacterCustomizationUIHandler : MonoBehaviour
 {
@@ -228,6 +229,57 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
             preview.ApplySkinMaterial(skinDatabase.GetSkinMaterial(currentSkinIndex));
         }
         preview.ApplyPlayerName(PlayerCustomizationData.PlayerName);
+    }
+
+    // --- Panel Management ---
+    /// <summary>
+    /// Activa un panel de UI. Asignar a OnClick del botón en Unity Inspector
+    /// arrastrando el GameObject del panel como argumento.
+    /// </summary>
+    public void OpenPanel(GameObject panel)
+    {
+        if (panel != null)
+        {
+            panel.SetActive(true);
+        }
+    }
+
+    /// <summary>
+    /// Cierra el panel padre del botón que lo invoca. Asignar a OnClick del botón
+    /// en Unity Inspector sin arrastrar ninguna referencia (sin parámetros).
+    /// Busca hacia arriba el padre más cercano cuyo nombre contenga "Panel";
+    /// si no lo encuentra, cierra el padre directo.
+    /// </summary>
+    public void ClosePanel()
+    {
+        GameObject clickedButton = EventSystem.current != null
+            ? EventSystem.current.currentSelectedGameObject
+            : null;
+
+        if (clickedButton == null) return;
+
+        Transform parentPanel = FindParentPanel(clickedButton.transform);
+        if (parentPanel != null)
+        {
+            parentPanel.gameObject.SetActive(false);
+        }
+    }
+
+    private static Transform FindParentPanel(Transform start)
+    {
+        Transform current = start.parent;
+        Transform fallback = current;
+
+        while (current != null)
+        {
+            if (current.name.ToLower().Contains("panel"))
+            {
+                return current;
+            }
+            current = current.parent;
+        }
+
+        return fallback;
     }
 
     public void ReturnToConnectionScene()
