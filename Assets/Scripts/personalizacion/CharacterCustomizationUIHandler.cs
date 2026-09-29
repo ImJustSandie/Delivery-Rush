@@ -23,11 +23,13 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
     [SerializeField] private List<Image> bodyOptionBackgrounds = new List<Image>();
     [SerializeField] private List<Image> bagOptionBackgrounds = new List<Image>();
     [SerializeField] private List<Image> shirtOptionBackgrounds = new List<Image>();
+    [SerializeField] private List<Image> skinOptionBackgrounds = new List<Image>();
 
     private int currentHatIndex;
     private int currentBodyIndex;
     private int currentBagIndex;
     private int currentShirtIndex;
+    private int currentSkinIndex;
 
     private void Start()
     {
@@ -36,6 +38,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         currentBodyIndex = PlayerCustomizationData.BodyIndex;
         currentBagIndex = PlayerCustomizationData.BagIndex;
         currentShirtIndex = PlayerCustomizationData.ShirtIndex;
+        currentSkinIndex = PlayerCustomizationData.SkinIndex;
 
         if (nameInputField != null)
         {
@@ -165,11 +168,39 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         SyncWithNetwork();
     }
 
+    // --- Skin Color Customization ---
+    /// <summary>
+    /// Selecciona el color/piel del personaje por índice de lista (ej: 0 para piel1, 1 para piel2, 2 para piel3).
+    /// Asignar a OnClick del botón en Unity Inspector.
+    /// </summary>
+    public void SetSkinColor(int index)
+    {
+        if (skinDatabase == null || skinDatabase.SkinSkins.Count == 0) return;
+        currentSkinIndex = Mathf.Clamp(index, 0, skinDatabase.SkinSkins.Count - 1);
+        SaveAndApplySkin();
+    }
+
+    public void SelectSkinColor(int index) => SetSkinColor(index);
+    public void SetSkinIndex(int index) => SetSkinColor(index);
+    public void SelectSkinIndex(int index) => SetSkinColor(index);
+
+    private void SaveAndApplySkin()
+    {
+        PlayerCustomizationData.SkinIndex = currentSkinIndex;
+        if (preview != null && skinDatabase != null)
+        {
+            preview.ApplySkinMaterial(skinDatabase.GetSkinMaterial(currentSkinIndex));
+        }
+        UpdateSkinSelectionVisual();
+        SyncWithNetwork();
+    }
+
     // --- Selection Highlight ---
     private void UpdateHatSelectionVisual() => UpdateSelectionVisual(hatOptionBackgrounds, currentHatIndex);
     private void UpdateBodySelectionVisual() => UpdateSelectionVisual(bodyOptionBackgrounds, currentBodyIndex);
     private void UpdateBagSelectionVisual() => UpdateSelectionVisual(bagOptionBackgrounds, currentBagIndex);
     private void UpdateShirtSelectionVisual() => UpdateSelectionVisual(shirtOptionBackgrounds, currentShirtIndex);
+    private void UpdateSkinSelectionVisual() => UpdateSelectionVisual(skinOptionBackgrounds, currentSkinIndex);
 
     private void UpdateAllSelectionVisuals()
     {
@@ -177,6 +208,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         UpdateBodySelectionVisual();
         UpdateBagSelectionVisual();
         UpdateShirtSelectionVisual();
+        UpdateSkinSelectionVisual();
     }
 
     /// <summary>
@@ -204,7 +236,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         {
             if (sync.IsOwner)
             {
-                sync.UpdateSkinSelection(currentHatIndex, currentBodyIndex, currentBagIndex, currentShirtIndex, PlayerCustomizationData.SkinIndex);
+                sync.UpdateSkinSelection(currentHatIndex, currentBodyIndex, currentBagIndex, currentShirtIndex, currentSkinIndex);
                 sync.UpdatePlayerName(PlayerCustomizationData.PlayerName);
             }
         }
@@ -219,7 +251,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
             preview.ApplyBodyMaterial(skinDatabase.GetBodyMaterial(currentBodyIndex));
             preview.ApplyBagMaterial(skinDatabase.GetBagMaterial(currentBagIndex));
             preview.ApplyShirtMaterial(skinDatabase.GetShirtMaterial(currentShirtIndex));
-            preview.ApplySkinMaterial(skinDatabase.GetSkinMaterial(PlayerCustomizationData.SkinIndex));
+            preview.ApplySkinMaterial(skinDatabase.GetSkinMaterial(currentSkinIndex));
         }
         preview.ApplyPlayerName(PlayerCustomizationData.PlayerName);
     }
