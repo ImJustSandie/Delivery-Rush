@@ -191,7 +191,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CollectibleSpawnManager
   collectiblePrefab: {fileID: 2989246670604433347, guid: 06515c82f3956f14e834e0850fd9ce4c, type: 3}
-  powerUpPrefab: {fileID: 2989246670604433347, guid: d50cc8d9c95758c4b819da9bd9f6e4cb, type: 3}
+  powerUpPrefab: {fileID: 7407129581679103059, guid: 239810ff9a1bf8a4f84e097aac5ce094, type: 3}
   powerUpChance: 0.25
   maxPowerUps: 10
   slowPowerUpChance: 0.5
