@@ -78,6 +78,28 @@ MonoBehaviour:
   - id: maleta_Gold
     displayName: 
     material: {fileID: 2100000, guid: ebb218cac8e4f844ab8f88613d00ae0a, type: 2}
+  shirtSkins:
+  - id: camisa_Steven
+    displayName: 
+    material: {fileID: 2100000, guid: 7dbf711b3d4629a4c9256b22a27bedb5, type: 2}
+  - id: camisa_JP
+    displayName: 
+    material: {fileID: 2100000, guid: c54e4083a6b547b449dffce808b4da72, type: 2}
+  - id: camisa_Escencial
+    displayName: 
+    material: {fileID: 2100000, guid: 58c36005e7824de478780e9580fa86af, type: 2}
+  - id: camisa_perro
+    displayName: 
+    material: {fileID: 2100000, guid: c5d9a585558368944947077018fc5ac8, type: 2}
+  - id: camisa_copper
+    displayName: 
+    material: {fileID: 2100000, guid: e5687bbd2cd1af94c8171eee8c8bb5f4, type: 2}
+  - id: camisa_silver
+    displayName: 
+    material: {fileID: 2100000, guid: 547bf2c6be54bf749ac31b65cb426c09, type: 2}
+  - id: camisa_gold
+    displayName: 
+    material: {fileID: 2100000, guid: ebb218cac8e4f844ab8f88613d00ae0a, type: 2}
   skinSkins:
   - id: piel_Clara
     displayName: 

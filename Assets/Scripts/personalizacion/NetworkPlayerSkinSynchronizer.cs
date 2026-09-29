@@ -19,6 +19,7 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
     private readonly NetworkVariable<int> netHatIndex = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private readonly NetworkVariable<int> netBodyIndex = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private readonly NetworkVariable<int> netBagIndex = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    private readonly NetworkVariable<int> netShirtIndex = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private readonly NetworkVariable<int> netSkinIndex = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private readonly NetworkVariable<FixedString64Bytes> netPlayerName = new NetworkVariable<FixedString64Bytes>("Repartidor", NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
@@ -38,6 +39,7 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
         netHatIndex.OnValueChanged += OnHatChanged;
         netBodyIndex.OnValueChanged += OnBodyChanged;
         netBagIndex.OnValueChanged += OnBagChanged;
+        netShirtIndex.OnValueChanged += OnShirtChanged;
         netSkinIndex.OnValueChanged += OnSkinChanged;
         netPlayerName.OnValueChanged += OnPlayerNameChanged;
 
@@ -47,17 +49,18 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
             int myHat = PlayerCustomizationData.HatIndex;
             int myBody = PlayerCustomizationData.BodyIndex;
             int myBag = PlayerCustomizationData.BagIndex;
+            int myShirt = PlayerCustomizationData.ShirtIndex;
             int mySkin = PlayerCustomizationData.SkinIndex;
             string myName = PlayerCustomizationData.PlayerName;
 
-            SubmitSkinSelectionServerRpc(myHat, myBody, myBag, mySkin);
+            SubmitSkinSelectionServerRpc(myHat, myBody, myBag, myShirt, mySkin);
             SubmitPlayerNameServerRpc(myName);
-            ApplySkin(myHat, myBody, myBag, mySkin);
+            ApplySkin(myHat, myBody, myBag, myShirt, mySkin);
         }
         else
         {
             // Aplicar el estado actual que el servidor ya conoce para los demás jugadores
-            ApplySkin(netHatIndex.Value, netBodyIndex.Value, netBagIndex.Value, netSkinIndex.Value);
+            ApplySkin(netHatIndex.Value, netBodyIndex.Value, netBagIndex.Value, netShirtIndex.Value, netSkinIndex.Value);
         }
     }
 
@@ -67,6 +70,7 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
         netHatIndex.OnValueChanged -= OnHatChanged;
         netBodyIndex.OnValueChanged -= OnBodyChanged;
         netBagIndex.OnValueChanged -= OnBagChanged;
+        netShirtIndex.OnValueChanged -= OnShirtChanged;
         netSkinIndex.OnValueChanged -= OnSkinChanged;
         netPlayerName.OnValueChanged -= OnPlayerNameChanged;
     }
@@ -91,30 +95,36 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
 
     public void UpdateSkinSelection(int hat, int body, int bag)
     {
-        UpdateSkinSelection(hat, body, bag, PlayerCustomizationData.SkinIndex);
+        UpdateSkinSelection(hat, body, bag, PlayerCustomizationData.ShirtIndex, PlayerCustomizationData.SkinIndex);
+    }
+
+    public void UpdateSkinSelection(int hat, int body, int bag, int skin)
+    {
+        UpdateSkinSelection(hat, body, bag, PlayerCustomizationData.ShirtIndex, skin);
     }
 
     /// <summary>
     /// Actualiza la skin del jugador local dinámicamente y la transmite a través del servidor a todos los clientes.
     /// </summary>
-    public void UpdateSkinSelection(int hat, int body, int bag, int skin)
+    public void UpdateSkinSelection(int hat, int body, int bag, int shirt, int skin)
     {
         if (!IsOwner) return;
 
-        ApplySkin(hat, body, bag, skin);
+        ApplySkin(hat, body, bag, shirt, skin);
 
         if (IsSpawned)
         {
-            SubmitSkinSelectionServerRpc(hat, body, bag, skin);
+            SubmitSkinSelectionServerRpc(hat, body, bag, shirt, skin);
         }
     }
 
     [ServerRpc]
-    private void SubmitSkinSelectionServerRpc(int hat, int body, int bag, int skin)
+    private void SubmitSkinSelectionServerRpc(int hat, int body, int bag, int shirt, int skin)
     {
         netHatIndex.Value = hat;
         netBodyIndex.Value = body;
         netBagIndex.Value = bag;
+        netShirtIndex.Value = shirt;
         netSkinIndex.Value = skin;
     }
 
@@ -125,10 +135,11 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
         netPlayerName.Value = new FixedString64Bytes(name);
     }
 
-    private void OnHatChanged(int oldVal, int newVal) => ApplySkin(newVal, netBodyIndex.Value, netBagIndex.Value, netSkinIndex.Value);
-    private void OnBodyChanged(int oldVal, int newVal) => ApplySkin(netHatIndex.Value, newVal, netBagIndex.Value, netSkinIndex.Value);
-    private void OnBagChanged(int oldVal, int newVal) => ApplySkin(netHatIndex.Value, netBodyIndex.Value, newVal, netSkinIndex.Value);
-    private void OnSkinChanged(int oldVal, int newVal) => ApplySkin(netHatIndex.Value, netBodyIndex.Value, netBagIndex.Value, newVal);
+    private void OnHatChanged(int oldVal, int newVal) => ApplySkin(newVal, netBodyIndex.Value, netBagIndex.Value, netShirtIndex.Value, netSkinIndex.Value);
+    private void OnBodyChanged(int oldVal, int newVal) => ApplySkin(netHatIndex.Value, newVal, netBagIndex.Value, netShirtIndex.Value, netSkinIndex.Value);
+    private void OnBagChanged(int oldVal, int newVal) => ApplySkin(netHatIndex.Value, netBodyIndex.Value, newVal, netShirtIndex.Value, netSkinIndex.Value);
+    private void OnShirtChanged(int oldVal, int newVal) => ApplySkin(netHatIndex.Value, netBodyIndex.Value, netBagIndex.Value, newVal, netSkinIndex.Value);
+    private void OnSkinChanged(int oldVal, int newVal) => ApplySkin(netHatIndex.Value, netBodyIndex.Value, netBagIndex.Value, netShirtIndex.Value, newVal);
 
     private void OnPlayerNameChanged(FixedString64Bytes oldVal, FixedString64Bytes newVal)
     {
@@ -139,13 +150,14 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
         }
     }
 
-    private void ApplySkin(int hat, int body, int bag, int skin)
+    private void ApplySkin(int hat, int body, int bag, int shirt, int skin)
     {
         if (customizationPreview == null || skinDatabase == null) return;
 
         customizationPreview.ApplyHatMaterial(skinDatabase.GetHatMaterial(hat));
         customizationPreview.ApplyBodyMaterial(skinDatabase.GetBodyMaterial(body));
         customizationPreview.ApplyBagMaterial(skinDatabase.GetBagMaterial(bag));
+        customizationPreview.ApplyShirtMaterial(skinDatabase.GetShirtMaterial(shirt));
         customizationPreview.ApplySkinMaterial(skinDatabase.GetSkinMaterial(skin));
     }
 }

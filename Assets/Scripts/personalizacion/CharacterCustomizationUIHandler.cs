@@ -16,6 +16,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
     private int currentHatIndex;
     private int currentBodyIndex;
     private int currentBagIndex;
+    private int currentShirtIndex;
     private int currentSkinIndex;
 
     private void Start()
@@ -24,6 +25,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         currentHatIndex = PlayerCustomizationData.HatIndex;
         currentBodyIndex = PlayerCustomizationData.BodyIndex;
         currentBagIndex = PlayerCustomizationData.BagIndex;
+        currentShirtIndex = PlayerCustomizationData.ShirtIndex;
         currentSkinIndex = PlayerCustomizationData.SkinIndex;
 
         if (nameInputField != null)
@@ -167,6 +169,44 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         SyncWithNetwork();
     }
 
+    // --- Shirt Customization ---
+    public void SelectNextShirtSkin()
+    {
+        if (skinDatabase == null || skinDatabase.ShirtSkins.Count == 0) return;
+        currentShirtIndex = (currentShirtIndex + 1) % skinDatabase.ShirtSkins.Count;
+        SaveAndApplyShirt();
+    }
+
+    public void SelectPreviousShirtSkin()
+    {
+        if (skinDatabase == null || skinDatabase.ShirtSkins.Count == 0) return;
+        currentShirtIndex = (currentShirtIndex - 1 + skinDatabase.ShirtSkins.Count) % skinDatabase.ShirtSkins.Count;
+        SaveAndApplyShirt();
+    }
+
+    /// <summary>
+    /// Selecciona la skin de camisa directamente por índice de lista (ej: 0 para camisa1, 1 para camisa2, 2 para camisa3).
+    /// Asignar a OnClick del botón en Unity Inspector.
+    /// </summary>
+    public void SetShirtSkin(int index)
+    {
+        if (skinDatabase == null || skinDatabase.ShirtSkins.Count == 0) return;
+        currentShirtIndex = Mathf.Clamp(index, 0, skinDatabase.ShirtSkins.Count - 1);
+        SaveAndApplyShirt();
+    }
+
+    public void SelectShirtSkin(int index) => SetShirtSkin(index);
+
+    private void SaveAndApplyShirt()
+    {
+        PlayerCustomizationData.ShirtIndex = currentShirtIndex;
+        if (preview != null && skinDatabase != null)
+        {
+            preview.ApplyShirtMaterial(skinDatabase.GetShirtMaterial(currentShirtIndex));
+        }
+        SyncWithNetwork();
+    }
+
     // --- Base Skin (Piel) Customization ---
     public void SelectNextSkin()
     {
@@ -212,7 +252,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         {
             if (sync.IsOwner)
             {
-                sync.UpdateSkinSelection(currentHatIndex, currentBodyIndex, currentBagIndex, currentSkinIndex);
+                sync.UpdateSkinSelection(currentHatIndex, currentBodyIndex, currentBagIndex, currentShirtIndex, currentSkinIndex);
                 sync.UpdatePlayerName(PlayerCustomizationData.PlayerName);
             }
         }
@@ -226,6 +266,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
             preview.ApplyHatMaterial(skinDatabase.GetHatMaterial(currentHatIndex));
             preview.ApplyBodyMaterial(skinDatabase.GetBodyMaterial(currentBodyIndex));
             preview.ApplyBagMaterial(skinDatabase.GetBagMaterial(currentBagIndex));
+            preview.ApplyShirtMaterial(skinDatabase.GetShirtMaterial(currentShirtIndex));
             preview.ApplySkinMaterial(skinDatabase.GetSkinMaterial(currentSkinIndex));
         }
         preview.ApplyPlayerName(PlayerCustomizationData.PlayerName);

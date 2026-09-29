@@ -16,6 +16,9 @@ public class CharacterCustomizationPreview : MonoBehaviour
     [Tooltip("Renderer responsable de la mochila (Bag).")]
     [SerializeField] private Renderer bagRenderer;
 
+    [Tooltip("Renderer responsable de la camisa (Shirt).")]
+    [SerializeField] private Renderer shirtRenderer;
+
     [Tooltip("Renderer responsable de la piel/cuerpo base (Skin).")]
     [SerializeField] private Renderer skinRenderer;
 
@@ -28,6 +31,7 @@ public class CharacterCustomizationPreview : MonoBehaviour
     [SerializeField] private int hatMaterialIndex = 0;
     [SerializeField] private int bodyMaterialIndex = 0;
     [SerializeField] private int bagMaterialIndex = 0;
+    [SerializeField] private int shirtMaterialIndex = 0;
     [SerializeField] private int skinMaterialIndex = 0;
 
     [Tooltip("Si es verdadero, cargará los skins guardados en PlayerPrefs en Start y OnEnable (solo para previews fuera de red).")]
@@ -63,6 +67,7 @@ public class CharacterCustomizationPreview : MonoBehaviour
             ApplyHatMaterial(skinDatabase.GetHatMaterial(PlayerCustomizationData.HatIndex));
             ApplyBodyMaterial(skinDatabase.GetBodyMaterial(PlayerCustomizationData.BodyIndex));
             ApplyBagMaterial(skinDatabase.GetBagMaterial(PlayerCustomizationData.BagIndex));
+            ApplyShirtMaterial(skinDatabase.GetShirtMaterial(PlayerCustomizationData.ShirtIndex));
             ApplySkinMaterial(skinDatabase.GetSkinMaterial(PlayerCustomizationData.SkinIndex));
         }
         ApplyPlayerName(PlayerCustomizationData.PlayerName);
@@ -98,6 +103,11 @@ public class CharacterCustomizationPreview : MonoBehaviour
     public void ApplyBagMaterial(Material newMat)
     {
         ApplyMaterialToRenderer(bagRenderer, bagMaterialIndex, newMat);
+    }
+
+    public void ApplyShirtMaterial(Material newMat)
+    {
+        ApplyMaterialToRenderer(shirtRenderer, shirtMaterialIndex, newMat);
     }
 
     public void ApplySkinMaterial(Material newMat)

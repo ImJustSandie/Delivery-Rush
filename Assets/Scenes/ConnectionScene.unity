@@ -965,6 +965,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9541d86e2fd84c1d9990edf0852d74ab, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshPro
+--- !u!137 &612510091 stripped
+SkinnedMeshRenderer:
+  m_CorrespondingSourceObject: {fileID: 8288637247311848053, guid: 88b61572a17103840a94d6136a964fa5, type: 3}
+  m_PrefabInstance: {fileID: 612510089}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &736735550
 GameObject:
   m_ObjectHideFlags: 0
@@ -2315,11 +2320,13 @@ MonoBehaviour:
   hatRenderer: {fileID: 1934459839}
   bodyRenderer: {fileID: 471476854}
   bagRenderer: {fileID: 1034568265}
+  shirtRenderer: {fileID: 612510091}
   skinRenderer: {fileID: 304856064}
   nameTextLabel: {fileID: 612510090}
   hatMaterialIndex: 0
   bodyMaterialIndex: 0
   bagMaterialIndex: 0
+  shirtMaterialIndex: 0
   skinMaterialIndex: 0
   autoLoadFromPlayerPrefs: 1
 --- !u!114 &1786984173

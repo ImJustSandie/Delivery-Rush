@@ -713,11 +713,13 @@ MonoBehaviour:
   hatRenderer: {fileID: 8560065746654599088}
   bodyRenderer: {fileID: 5541584880571454512}
   bagRenderer: {fileID: 2491504218613063875}
+  shirtRenderer: {fileID: 8288637247311848053}
   skinRenderer: {fileID: 4744326054503543229}
   nameTextLabel: {fileID: 0}
   hatMaterialIndex: 0
   bodyMaterialIndex: 0
   bagMaterialIndex: 0
+  shirtMaterialIndex: 0
   skinMaterialIndex: 0
   autoLoadFromPlayerPrefs: 1
 --- !u!114 &6855990020643329379
@@ -780,6 +782,11 @@ MonoBehaviour:
 --- !u!137 &5541584880571454512 stripped
 SkinnedMeshRenderer:
   m_CorrespondingSourceObject: {fileID: 791774380976937438, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
+  m_PrefabInstance: {fileID: 5051728766875831790}
+  m_PrefabAsset: {fileID: 0}
+--- !u!137 &8288637247311848053 stripped
+SkinnedMeshRenderer:
+  m_CorrespondingSourceObject: {fileID: -5396298456247980133, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
   m_PrefabInstance: {fileID: 5051728766875831790}
   m_PrefabAsset: {fileID: 0}
 --- !u!137 &8560065746654599088 stripped
