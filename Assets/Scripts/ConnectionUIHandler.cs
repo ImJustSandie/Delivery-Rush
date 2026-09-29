@@ -15,6 +15,9 @@ public class ConnectionUIHandler : MonoBehaviour
     [Tooltip("Nombre de la escena de personalización de personaje.")]
     [SerializeField] private string customizationSceneName = "CustomizationScene";
 
+    [Tooltip("Nombre de la escena de tutorial (copia offline de la escena de juego).")]
+    [SerializeField] private string tutorialSceneName = "TutorialScene";
+
     [Header("Network Connection Configuration")]
     [Tooltip("Campo de texto de TMP para ingresar la IP del servidor.")]
     [SerializeField] private TMP_InputField ipInputField;
@@ -182,6 +185,17 @@ public class ConnectionUIHandler : MonoBehaviour
     {
         Debug.Log($"[ConnectionUIHandler] Cambiando a la escena de personalización: {customizationSceneName}");
         UnityEngine.SceneManagement.SceneManager.LoadScene(customizationSceneName);
+    }
+
+    /// <summary>
+    /// Entra al tutorial ("Cómo jugar"): carga la copia de la escena de juego en modo
+    /// local (objetos normales, sin timer ni más jugadores).
+    /// Asignar al OnClick del botón ComoJugar_btn del menú principal.
+    /// </summary>
+    public void OpenTutorialScene()
+    {
+        Debug.Log($"[ConnectionUIHandler] Entrando al tutorial: {tutorialSceneName}");
+        TutorialManager.OpenTutorial(tutorialSceneName);
     }
 }
 

@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 public class CharacterCustomizationUIHandler : MonoBehaviour
 {
@@ -13,11 +15,19 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
     [Header("Scene Navigation")]
     [SerializeField] private string connectionSceneName = "ConnectionScene";
 
+    [Header("Selection Highlight")]
+    [SerializeField] private Color selectedBackgroundColor = new Color(1f, 0.85f, 0.2f, 1f);
+    [SerializeField] private Color normalBackgroundColor = Color.white;
+    [Tooltip("Fondos (Image de borde) de cada opción, en el mismo orden que los IDs (0, 1, 2...). Jerarquía esperada: Imagen de borde -> Botón -> Imagen de icono.")]
+    [SerializeField] private List<Image> hatOptionBackgrounds = new List<Image>();
+    [SerializeField] private List<Image> bodyOptionBackgrounds = new List<Image>();
+    [SerializeField] private List<Image> bagOptionBackgrounds = new List<Image>();
+    [SerializeField] private List<Image> shirtOptionBackgrounds = new List<Image>();
+
     private int currentHatIndex;
     private int currentBodyIndex;
     private int currentBagIndex;
     private int currentShirtIndex;
-    private int currentSkinIndex;
 
     private void Start()
     {
@@ -26,7 +36,6 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         currentBodyIndex = PlayerCustomizationData.BodyIndex;
         currentBagIndex = PlayerCustomizationData.BagIndex;
         currentShirtIndex = PlayerCustomizationData.ShirtIndex;
-        currentSkinIndex = PlayerCustomizationData.SkinIndex;
 
         if (nameInputField != null)
         {
@@ -35,6 +44,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         }
 
         UpdateAllPreviews();
+        UpdateAllSelectionVisuals();
     }
 
     private void OnDestroy()
@@ -56,20 +66,6 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
     }
 
     // --- Hat Customization ---
-    public void SelectNextHatSkin()
-    {
-        if (skinDatabase == null || skinDatabase.HatSkins.Count == 0) return;
-        currentHatIndex = (currentHatIndex + 1) % skinDatabase.HatSkins.Count;
-        SaveAndApplyHat();
-    }
-
-    public void SelectPreviousHatSkin()
-    {
-        if (skinDatabase == null || skinDatabase.HatSkins.Count == 0) return;
-        currentHatIndex = (currentHatIndex - 1 + skinDatabase.HatSkins.Count) % skinDatabase.HatSkins.Count;
-        SaveAndApplyHat();
-    }
-
     /// <summary>
     /// Selecciona la skin de gorra directamente por índice de lista (ej: 0 para gorra1, 1 para gorra2, 2 para gorra3).
     /// Asignar a OnClick del botón en Unity Inspector.
@@ -90,24 +86,11 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         {
             preview.ApplyHatMaterial(skinDatabase.GetHatMaterial(currentHatIndex));
         }
+        UpdateHatSelectionVisual();
         SyncWithNetwork();
     }
 
     // --- Body Customization ---
-    public void SelectNextBodySkin()
-    {
-        if (skinDatabase == null || skinDatabase.BodySkins.Count == 0) return;
-        currentBodyIndex = (currentBodyIndex + 1) % skinDatabase.BodySkins.Count;
-        SaveAndApplyBody();
-    }
-
-    public void SelectPreviousBodySkin()
-    {
-        if (skinDatabase == null || skinDatabase.BodySkins.Count == 0) return;
-        currentBodyIndex = (currentBodyIndex - 1 + skinDatabase.BodySkins.Count) % skinDatabase.BodySkins.Count;
-        SaveAndApplyBody();
-    }
-
     /// <summary>
     /// Selecciona la skin de chaleco directamente por índice de lista (ej: 0 para chaleco1, 1 para chaleco2, 2 para chaleco3).
     /// Asignar a OnClick del botón en Unity Inspector.
@@ -128,24 +111,11 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         {
             preview.ApplyBodyMaterial(skinDatabase.GetBodyMaterial(currentBodyIndex));
         }
+        UpdateBodySelectionVisual();
         SyncWithNetwork();
     }
 
     // --- Bag Customization ---
-    public void SelectNextBagSkin()
-    {
-        if (skinDatabase == null || skinDatabase.BagSkins.Count == 0) return;
-        currentBagIndex = (currentBagIndex + 1) % skinDatabase.BagSkins.Count;
-        SaveAndApplyBag();
-    }
-
-    public void SelectPreviousBagSkin()
-    {
-        if (skinDatabase == null || skinDatabase.BagSkins.Count == 0) return;
-        currentBagIndex = (currentBagIndex - 1 + skinDatabase.BagSkins.Count) % skinDatabase.BagSkins.Count;
-        SaveAndApplyBag();
-    }
-
     /// <summary>
     /// Selecciona la skin de maleta directamente por índice de lista (ej: 0 para maleta1, 1 para maleta2, 2 para maleta3).
     /// Asignar a OnClick del botón en Unity Inspector.
@@ -166,24 +136,11 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         {
             preview.ApplyBagMaterial(skinDatabase.GetBagMaterial(currentBagIndex));
         }
+        UpdateBagSelectionVisual();
         SyncWithNetwork();
     }
 
     // --- Shirt Customization ---
-    public void SelectNextShirtSkin()
-    {
-        if (skinDatabase == null || skinDatabase.ShirtSkins.Count == 0) return;
-        currentShirtIndex = (currentShirtIndex + 1) % skinDatabase.ShirtSkins.Count;
-        SaveAndApplyShirt();
-    }
-
-    public void SelectPreviousShirtSkin()
-    {
-        if (skinDatabase == null || skinDatabase.ShirtSkins.Count == 0) return;
-        currentShirtIndex = (currentShirtIndex - 1 + skinDatabase.ShirtSkins.Count) % skinDatabase.ShirtSkins.Count;
-        SaveAndApplyShirt();
-    }
-
     /// <summary>
     /// Selecciona la skin de camisa directamente por índice de lista (ej: 0 para camisa1, 1 para camisa2, 2 para camisa3).
     /// Asignar a OnClick del botón en Unity Inspector.
@@ -204,45 +161,40 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         {
             preview.ApplyShirtMaterial(skinDatabase.GetShirtMaterial(currentShirtIndex));
         }
+        UpdateShirtSelectionVisual();
         SyncWithNetwork();
     }
 
-    // --- Base Skin (Piel) Customization ---
-    public void SelectNextSkin()
-    {
-        if (skinDatabase == null || skinDatabase.SkinSkins.Count == 0) return;
-        currentSkinIndex = (currentSkinIndex + 1) % skinDatabase.SkinSkins.Count;
-        SaveAndApplySkin();
-    }
+    // --- Selection Highlight ---
+    private void UpdateHatSelectionVisual() => UpdateSelectionVisual(hatOptionBackgrounds, currentHatIndex);
+    private void UpdateBodySelectionVisual() => UpdateSelectionVisual(bodyOptionBackgrounds, currentBodyIndex);
+    private void UpdateBagSelectionVisual() => UpdateSelectionVisual(bagOptionBackgrounds, currentBagIndex);
+    private void UpdateShirtSelectionVisual() => UpdateSelectionVisual(shirtOptionBackgrounds, currentShirtIndex);
 
-    public void SelectPreviousSkin()
+    private void UpdateAllSelectionVisuals()
     {
-        if (skinDatabase == null || skinDatabase.SkinSkins.Count == 0) return;
-        currentSkinIndex = (currentSkinIndex - 1 + skinDatabase.SkinSkins.Count) % skinDatabase.SkinSkins.Count;
-        SaveAndApplySkin();
+        UpdateHatSelectionVisual();
+        UpdateBodySelectionVisual();
+        UpdateBagSelectionVisual();
+        UpdateShirtSelectionVisual();
     }
 
     /// <summary>
-    /// Selecciona el tono/material de la piel directamente por índice de lista (ej: 0 para piel1, 1 para piel2, 2 para piel3).
-    /// Asignar a OnClick del botón en Unity Inspector.
+    /// Colorea el fondo (Image de borde) del item seleccionado en una sección.
+    /// Cada elemento de la lista corresponde a un ID (0, 1, 2...).
+    /// Si la lista está vacía (sin asignar en Inspector), no hace nada.
     /// </summary>
-    public void SetSkin(int index)
+    private void UpdateSelectionVisual(List<Image> optionBackgrounds, int selectedIndex)
     {
-        if (skinDatabase == null || skinDatabase.SkinSkins.Count == 0) return;
-        currentSkinIndex = Mathf.Clamp(index, 0, skinDatabase.SkinSkins.Count - 1);
-        SaveAndApplySkin();
-    }
+        if (optionBackgrounds == null || optionBackgrounds.Count == 0) return;
 
-    public void SelectSkin(int index) => SetSkin(index);
-
-    private void SaveAndApplySkin()
-    {
-        PlayerCustomizationData.SkinIndex = currentSkinIndex;
-        if (preview != null && skinDatabase != null)
+        for (int i = 0; i < optionBackgrounds.Count; i++)
         {
-            preview.ApplySkinMaterial(skinDatabase.GetSkinMaterial(currentSkinIndex));
+            Image background = optionBackgrounds[i];
+            if (background == null) continue;
+
+            background.color = (i == selectedIndex) ? selectedBackgroundColor : normalBackgroundColor;
         }
-        SyncWithNetwork();
     }
 
     private void SyncWithNetwork()
@@ -252,7 +204,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
         {
             if (sync.IsOwner)
             {
-                sync.UpdateSkinSelection(currentHatIndex, currentBodyIndex, currentBagIndex, currentShirtIndex, currentSkinIndex);
+                sync.UpdateSkinSelection(currentHatIndex, currentBodyIndex, currentBagIndex, currentShirtIndex, PlayerCustomizationData.SkinIndex);
                 sync.UpdatePlayerName(PlayerCustomizationData.PlayerName);
             }
         }
@@ -267,7 +219,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
             preview.ApplyBodyMaterial(skinDatabase.GetBodyMaterial(currentBodyIndex));
             preview.ApplyBagMaterial(skinDatabase.GetBagMaterial(currentBagIndex));
             preview.ApplyShirtMaterial(skinDatabase.GetShirtMaterial(currentShirtIndex));
-            preview.ApplySkinMaterial(skinDatabase.GetSkinMaterial(currentSkinIndex));
+            preview.ApplySkinMaterial(skinDatabase.GetSkinMaterial(PlayerCustomizationData.SkinIndex));
         }
         preview.ApplyPlayerName(PlayerCustomizationData.PlayerName);
     }
