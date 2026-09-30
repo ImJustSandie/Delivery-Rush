@@ -68,10 +68,13 @@ public class CanvasCameraAssigner : MonoBehaviour
 
         if (!inLobby)
         {
-            // Buscar la PlayerCamera del jugador local (IsOwner) que esté habilitada
+            // Buscar la PlayerCamera del jugador local (IsOwner) que esté habilitada.
+            // En tutorial offline IsOwner es false (sin red): aceptar el único jugador en escena.
+            bool isOfflineTutorial = TutorialManager.IsTutorial
+                && (Unity.Netcode.NetworkManager.Singleton == null || !Unity.Netcode.NetworkManager.Singleton.IsListening);
             foreach (var pm in FindObjectsByType<PlayerMovementManager>(FindObjectsSortMode.None))
             {
-                if (pm.IsOwner)
+                if (pm.IsOwner || isOfflineTutorial)
                 {
                     Camera playerCam = pm.GetComponentInChildren<Camera>(true);
                     if (playerCam != null && playerCam.enabled)

@@ -58,12 +58,25 @@ public class InteractableCube : NetworkBehaviour
                 trigger.size = boxSolid.size * interactionRange;
             interactionCollider = trigger;
         }
+
+        EnsureFloatAnimation();
+    }
+
+    /// <summary>
+    /// Añade por código la animación de flotar + girar si el prefab no la trae.
+    /// Evita tocar el prefab/escena: funciona para instancias ya colocadas y spawneadas.
+    /// </summary>
+    private void EnsureFloatAnimation()
+    {
+        if (GetComponent<CollectibleFloatAnimation>() == null)
+            gameObject.AddComponent<CollectibleFloatAnimation>();
     }
 
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
         spawnTime = Time.time;
+        GetComponent<CollectibleFloatAnimation>()?.NotifySpawned();
         CollectibleSpawnManager.Instance?.Register(this);
     }
 
@@ -189,6 +202,11 @@ public class InteractableCube : NetworkBehaviour
         if (isCollected || player == null) return false;
         if (player.IsInventoryFull) return false;
 
+        if (TutorialManager.IsTutorial && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening))
+        {
+            return PerformCollectOffline(player);
+        }
+
         if (IsServer)
         {
             return PerformCollect(player.NetworkObjectId);
@@ -252,6 +270,37 @@ public class InteractableCube : NetworkBehaviour
         {
             Destroy(gameObject);
         }
+        return true;
+    }
+
+    /// <summary>
+    /// Recolección offline (tutorial sin red): usa la referencia directa al jugador,
+    /// sin NetworkObjectId ni RPCs. Destruye el objeto con Destroy normal.
+    /// </summary>
+    private bool PerformCollectOffline(PlayerMovementManager targetPlayer)
+    {
+        if (isCollected || targetPlayer == null) return false;
+        if (TutorialManager.IsTutorialDummyPlayer(targetPlayer))
+        {
+            // Excepción del tutorial: el dummy recoge constantemente lo que colisiona
+            // sin que se le cuente el inventario (siempre tiene espacio, nunca entrega).
+            isCollected = true;
+            PublishCubeState(true);
+            Destroy(gameObject);
+            return true;
+        }
+        if (targetPlayer.IsInventoryFull) return false;
+
+        isCollected = true;
+        bool added = targetPlayer.AddCollected(1);
+        if (!added)
+        {
+            isCollected = false;
+            return false;
+        }
+        Collected?.Invoke(targetPlayer);
+        PublishCubeState(true);
+        Destroy(gameObject);
         return true;
     }
 

@@ -36,6 +36,8 @@ public class CollectibleCounterUI : MonoBehaviour
     [SerializeField] private string fullSuffix = " ¡Lleno!";
 
     private bool isSubscribed;
+    private int lastShownCount = int.MinValue;
+    private int lastShownScore = int.MinValue;
 
     private void Awake()
     {
@@ -63,8 +65,20 @@ public class CollectibleCounterUI : MonoBehaviour
         }
 
         TryBindToLocalPlayer();
-        // Reintentar hasta encontrar al Player local (spawn de Netcode es asíncrono)
+        // Reintentar de forma persistente: el jugador offline se instancia un frame
+        // después de cargar la escena, y puede ser reemplazado al salir/entrar.
+        // No se cancela tras el primer bind: cada tick valida que el vínculo siga vivo.
+        CancelInvoke(nameof(TryBindToLocalPlayer));
         InvokeRepeating(nameof(TryBindToLocalPlayer), 0.5f, 0.5f);
+    }
+
+    private void Update()
+    {
+        // Respaldo por polling: aunque se pierda un evento, la UI siempre refleja
+        // el estado actual del jugador (llevo / entrego). Barato y a prueba de orden de ejecución.
+        if (targetPlayer == null || !IsValidSceneReference(targetPlayer)) return;
+        if (targetPlayer.CollectedCount != lastShownCount || targetPlayer.Score != lastShownScore)
+            RefreshUI();
     }
 
     private void OnDisable()
@@ -75,14 +89,20 @@ public class CollectibleCounterUI : MonoBehaviour
 
     private void TryBindToLocalPlayer()
     {
-        // Si hay referencia inválida (prefab), descartarla
+        // Si hay referencia inválida (prefab) o el jugador vinculado fue destruido /
+        // quedó en otra escena (salir/entrar al tutorial), descartarla y re-buscar.
         if (targetPlayer != null && !IsValidSceneReference(targetPlayer))
         {
             Unsubscribe();
             targetPlayer = null;
         }
 
-        if (targetPlayer != null && isSubscribed) return;
+        if (targetPlayer != null && isSubscribed)
+        {
+            // Vínculo vivo: refrescar por si llegó un jugador nuevo idéntico.
+            RefreshUI();
+            return;
+        }
 
         if (targetPlayer == null)
             targetPlayer = FindLocalPlayer();
@@ -90,7 +110,6 @@ public class CollectibleCounterUI : MonoBehaviour
         if (targetPlayer == null) return;
 
         // Encontrado
-        CancelInvoke(nameof(TryBindToLocalPlayer));
         Subscribe();
         RefreshUI();
     }
@@ -98,23 +117,42 @@ public class CollectibleCounterUI : MonoBehaviour
     private static bool IsValidSceneReference(PlayerMovementManager pm)
     {
         if (pm == null) return false;
+        // El dummy del tutorial nunca es el jugador local del HUD.
+        if (TutorialManager.IsTutorialDummyPlayer(pm)) return false;
         // Un asset de prefab no está en ninguna escena cargada -> scene.IsValid() == false o rootCount == 0
         GameObject go = pm.gameObject;
         if (go == null) return false;
         var scene = go.scene;
         // En runtime un objeto instanciado siempre está en una scene válida y cargada
         if (!scene.IsValid() || !scene.isLoaded) return false;
+        // Solo vale el jugador de la escena activa (evita restos de otra escena).
+        if (!string.Equals(scene.name, UnityEngine.SceneManagement.SceneManager.GetActiveScene().name)) return false;
         return true;
     }
 
     private static PlayerMovementManager FindLocalPlayer()
     {
         // Buscar el Player con IsOwner (solo existe tras NetworkSpawn)
+        PlayerMovementManager first = null;
         foreach (PlayerMovementManager pm in FindObjectsByType<PlayerMovementManager>(FindObjectsSortMode.None))
         {
+            if (pm == null) continue;
+            // El dummy del tutorial no es el jugador local.
+            if (TutorialManager.IsTutorialDummyPlayer(pm)) continue;
+            // Solo jugadores de la escena activa (evita atarse a restos de otra escena).
+            if (!pm.gameObject.scene.IsValid() || !pm.gameObject.scene.isLoaded) continue;
+            if (!string.Equals(pm.gameObject.scene.name, UnityEngine.SceneManagement.SceneManager.GetActiveScene().name)) continue;
+            if (first == null) first = pm;
             if (pm.IsOwner)
                 return pm;
         }
+        // Sin red (tutorial offline o escena abierta directo en Editor): IsOwner
+        // siempre es false, usar el jugador de la escena activa.
+        if (first != null && (Unity.Netcode.NetworkManager.Singleton == null || !Unity.Netcode.NetworkManager.Singleton.IsListening))
+            return first;
+        // Compatibilidad: si es tutorial, aceptar el primero aunque haya red residual.
+        if (TutorialManager.IsTutorial && first != null)
+            return first;
         return null;
     }
 
@@ -154,6 +192,8 @@ public class CollectibleCounterUI : MonoBehaviour
         int max = targetPlayer.MaxCollected;
         int score = targetPlayer.Score;
         bool isFull = targetPlayer.IsInventoryFull;
+        lastShownCount = current;
+        lastShownScore = score;
 
         // Texto de contador
         if (counterText != null)

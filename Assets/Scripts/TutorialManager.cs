@@ -1,29 +1,37 @@
 using System.Collections;
+using System.Collections.Generic;
 using TMPro;
 using Unity.Netcode;
-using Unity.Netcode.Transports.UTP;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 /// <summary>
 /// Gestiona el modo tutorial ("Cómo jugar") solo con código, sin modificar escenas ni prefabs.
-/// La escena de tutorial es una copia de la escena de juego (TutorialScene) donde:
-/// - Los objetos se generan de forma normal (se inicia un Host local en solitario,
-///   por lo que CollectibleSpawnManager y el resto de lógica de servidor funcionan igual).
+/// La escena de tutorial es una copia de la escena de juego (TutorialScene) que se juega
+/// en un entorno completamente OFFLINE:
+/// - No se inicia Host ni Server ni Client (sin red, sin IP, sin Lobby).
+/// - Se instancia un jugador local a partir del PlayerPrefab del NetworkManager.
+/// - Los objetos se generan por Instanciación directa (CollectibleSpawnManager en modo offline).
 /// - No hay timer (MatchTimerManager solo corre en MainScene; además se oculta la UI del Timer).
-/// - No hay más jugadores (se bloquean nuevas conexiones tras iniciar el Host en solitario).
+/// - Jugador extra opcional (dummy, vinculado en el objeto TutorialSetup de la escena
+///   con el componente TutorialSceneSetup, o por fallback con "Dummy" en su nombre):
+///   queda quieto, hereda solo lo visual del usuario, muestra el nombre configurado
+///   y es el blanco del power-up de congelar (el congelar nunca afecta al que lo usa).
 /// - Un botón permite salir y volver a la escena inicial (ConnectionScene).
 ///
 /// PASOS MANUALES EN EL EDITOR (el código no puede hacerlos):
 /// 1. Agregar Assets/Scenes/TutorialScene.unity a la lista de escenas en Build
 ///    (File > Build Profiles > Scene List). Si no, la carga fallará.
-/// 2. En ConnectionScene, asignar al botón ComoJugar_btn el evento OnClick ->
-///    ConnectionUIHandler.OpenTutorialScene (arrastrar el objeto ConnectionUIHandler).
-/// 3. (Opcional) Si quieres tu propio botón de salir en TutorialScene, crea un Button
+///    NOTA: ConnectionUIHandler ya reasigna ComoJugar_btn -> OpenTutorialScene por código,
+///    no hace falta tocar el OnClick en el Inspector.
+/// 2. (Opcional) Si quieres tu propio botón de salir en TutorialScene, crea un Button
 ///    llamado "TutorialExitButton" (o "Volver_btn" / "Salir_btn" / "ExitButton");
 ///    este script lo detecta y lo conecta automáticamente. Si no existe, se crea
 ///    uno por defecto en tiempo de ejecución.
+/// 3. (Opcional) Para el dummy: en TutorialScene crea un GameObject "TutorialSetup",
+///    agrégale el componente TutorialSceneSetup y arrastra ahí el jugador de prueba.
+///    Sin ese vínculo igual funciona por fallback (cualquier jugador extra en escena).
 /// </summary>
 public class TutorialManager : MonoBehaviour
 {
@@ -32,16 +40,71 @@ public class TutorialManager : MonoBehaviour
     /// <summary>True mientras el jugador está en el tutorial.</summary>
     public static bool IsTutorial { get; private set; }
 
+    /// <summary>
+    /// True cuando el tutorial corre sin red (NetworkManager ausente o no escuchando).
+    /// Los scripts de gameplay usan esto para activar sus rutas locales offline.
+    /// </summary>
+    public static bool IsOfflineTutorial
+    {
+        get
+        {
+            if (!IsTutorial) return false;
+            return NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening;
+        }
+    }
+
+    /// <summary>
+    /// Nombre que identifica al jugador de prueba del tutorial. El usuario lo coloca
+    /// en la escena y este manager lo configura por código (visuales + nombre).
+    /// Se puede personalizar por Inspector en <see cref="TutorialSceneSetup"/>.
+    /// </summary>
+    public const string DummyDisplayName = "Dummy";
+
+    /// <summary>True si el objeto es el dummy del tutorial (su nombre contiene "Dummy").</summary>
+    public static bool IsDummyName(GameObject go)
+    {
+        return go != null && go.name.IndexOf(DummyDisplayName, System.StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    /// <summary>
+    /// True si el objeto es dummy del tutorial: vinculado en <see cref="TutorialSceneSetup"/>
+    /// o por nombre. Útil en Start() de otros scripts (el flag aún no está asignado).
+    /// </summary>
+    public static bool IsTutorialDummyObject(GameObject go)
+    {
+        if (go == null) return false;
+        var setup = TutorialSceneSetup.Instance;
+        if (setup != null && setup.IsExplicitDummyObject(go)) return true;
+        return IsDummyName(go);
+    }
+
+    /// <summary>
+    /// True si el componente pertenece al dummy del tutorial: flag, vínculo explícito o nombre.
+    /// </summary>
+    public static bool IsTutorialDummyPlayer(PlayerMovementManager pm)
+    {
+        if (pm == null) return false;
+        if (pm.IsTutorialDummy) return true;
+        var setup = TutorialSceneSetup.Instance;
+        if (setup != null && setup.IsExplicitDummy(pm)) return true;
+        return IsDummyName(pm.gameObject);
+    }
+
+    /// <summary>
+    /// Nombre visible del dummy: el configurado en <see cref="TutorialSceneSetup"/> o "Dummy".
+    /// </summary>
+    public static string ResolveDummyDisplayName()
+    {
+        var setup = TutorialSceneSetup.Instance;
+        return setup != null ? setup.DummyDisplayName : DummyDisplayName;
+    }
+
     [Header("Scene Config")]
     [Tooltip("Nombre de la escena de tutorial (copia de la escena de juego).")]
     [SerializeField] private string tutorialSceneName = "TutorialScene";
 
     [Tooltip("Nombre de la escena inicial (menú principal) a la que se regresa al salir.")]
     [SerializeField] private string connectionSceneName = "ConnectionScene";
-
-    [Header("Solo Host Config")]
-    [Tooltip("Puerto usado para el Host local en solitario.")]
-    [SerializeField] private ushort port = 7777;
 
     [Header("Exit Button")]
     [Tooltip("Texto del botón de salir creado automáticamente.")]
@@ -54,7 +117,9 @@ public class TutorialManager : MonoBehaviour
     [SerializeField] private string timerObjectName = "Timer";
 
     private GameObject autoExitCanvas;
-    private Coroutine startHostRoutine;
+    private GameObject offlinePlayer;
+    private bool offlinePlayerInstantiated;
+    private Coroutine enterRoutine;
 
     // Se ejecuta antes de cargar la primera escena: garantiza que el manager
     // exista sin necesidad de agregarlo a mano en ninguna escena.
@@ -107,16 +172,17 @@ public class TutorialManager : MonoBehaviour
         tutorialSceneName = sceneName;
         IsTutorial = true;
 
+        // Modo 100% offline: si había una sesión de red activa, cerrarla y NO iniciar otra.
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
         {
-            Debug.LogWarning("[TutorialManager] Había una sesión de red activa, se cerrará para entrar al tutorial.");
+            Debug.LogWarning("[TutorialManager] Había una sesión de red activa, se cerrará para entrar al tutorial offline.");
             NetworkManager.Singleton.Shutdown();
         }
 
         if (NetworkGameManager.Instance != null)
             NetworkGameManager.Instance.ResetGame(true);
 
-        Debug.Log($"[TutorialManager] Cargando escena de tutorial: {sceneName}");
+        Debug.Log($"[TutorialManager] Cargando escena de tutorial offline: {sceneName}");
         SceneManager.LoadScene(sceneName);
     }
 
@@ -126,70 +192,191 @@ public class TutorialManager : MonoBehaviour
 
         if (scene.name == tutorialSceneName)
         {
-            // Esperar un frame para que los Start() de la escena (CollectibleSpawnManager,
-            // MatchTimerManager, etc.) se registren antes de iniciar el Host local.
-            if (startHostRoutine != null) StopCoroutine(startHostRoutine);
-            startHostRoutine = StartCoroutine(EnterTutorialRoutine());
+            // Esperar un frame para que los Start() de la escena se registren
+            // antes de instanciar el jugador offline.
+            if (enterRoutine != null) StopCoroutine(enterRoutine);
+            enterRoutine = StartCoroutine(EnterOfflineRoutine());
         }
         else if (scene.name == connectionSceneName)
         {
-            // Al volver al menú, limpiar restos del botón automático por si acaso.
+            // Al volver al menú, limpiar restos del jugador offline y del botón automático.
+            CleanupOfflinePlayer();
             CleanupAutoExitButton();
         }
     }
 
-    private IEnumerator EnterTutorialRoutine()
+    private IEnumerator EnterOfflineRoutine()
     {
         yield return null; // un frame: deja que la escena termine de inicializarse
-        StartSoloHost();
+
+        // Seguridad: nunca debe haber red en el tutorial.
+        if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
+            NetworkManager.Singleton.Shutdown();
+
+        SpawnOfflinePlayer();
+        SetupTutorialDummies();
         HideTimerUI();
         WireOrCreateExitButton();
-        startHostRoutine = null;
+        enterRoutine = null;
+        Debug.Log("[TutorialManager] Tutorial offline iniciado: jugador local, objetos por instanciación directa, sin timer, sin red.");
     }
 
     /// <summary>
-    /// Inicia un Host local en solitario para que toda la lógica de servidor
-    /// (spawn de objetos, recolección, entregas) funcione como en la partida normal,
-    /// pero sin timer (inactivo fuera de MainScene) y sin más jugadores
-    /// (se bloquean nuevas conexiones).
+    /// Instancia el jugador local sin red a partir del PlayerPrefab configurado
+    /// en el NetworkManager. Si la escena ya trae un Player (no dummy), lo reutiliza.
+    /// El posicionamiento lo hace PlayerSpawnSetter en modo offline (Start).
     /// </summary>
-    private void StartSoloHost()
+    private void SpawnOfflinePlayer()
     {
-        if (NetworkManager.Singleton == null)
+        if (offlinePlayer != null)
         {
-            Debug.LogError("[TutorialManager] NetworkManager.Singleton no encontrado. El tutorial necesita el NetworkManager persistente del menú.");
+            ApplySavedCustomization(offlinePlayer);
             return;
         }
 
-        if (NetworkManager.Singleton.IsListening)
-            NetworkManager.Singleton.Shutdown();
-
-        var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-        if (transport != null)
+        // Reutilizar un Player de la escena, pero NUNCA el dummy (es el rival de prueba).
+        foreach (PlayerMovementManager pm in FindObjectsByType<PlayerMovementManager>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
         {
-            string localIP = LobbyUIHandler.GetLocalIPAddress();
-            transport.SetConnectionData(localIP, port, "0.0.0.0");
-            Debug.Log($"[TutorialManager] Host de tutorial en {localIP}:{port} (solo local).");
-        }
-
-        if (NetworkGameManager.Instance != null)
-        {
-            NetworkGameManager.Instance.ConfigureConnectionApproval();
-            NetworkGameManager.Instance.ResetGame();
-        }
-
-        bool ok = NetworkManager.Singleton.StartHost();
-        if (!ok)
-        {
-            Debug.LogError("[TutorialManager] No se pudo iniciar el Host de tutorial.");
+            if (pm == null) continue;
+            if (IsTutorialDummyObject(pm.gameObject)) continue;
+            offlinePlayer = pm.gameObject;
+            offlinePlayer.SetActive(true);
+            Debug.Log("[TutorialManager] Reutilizando Player existente en TutorialScene para modo offline.");
+            ApplySavedCustomization(offlinePlayer);
             return;
         }
 
-        // Bloquear nuevas conexiones: no habrá más jugadores.
-        if (NetworkGameManager.Instance != null)
-            NetworkGameManager.Instance.StartGame();
+        GameObject prefab = null;
+        if (NetworkManager.Singleton != null && NetworkManager.Singleton.NetworkConfig.PlayerPrefab != null)
+            prefab = NetworkManager.Singleton.NetworkConfig.PlayerPrefab.gameObject;
 
-        Debug.Log("[TutorialManager] Tutorial iniciado: objetos normales, sin timer, sin más jugadores.");
+        if (prefab == null)
+        {
+            Debug.LogError("[TutorialManager] No se encontró PlayerPrefab en NetworkManager.NetworkConfig. No se puede crear el jugador offline.");
+            return;
+        }
+
+        offlinePlayer = Instantiate(prefab);
+        offlinePlayer.name = "TutorialPlayer (Offline)";
+        offlinePlayerInstantiated = true;
+        Debug.Log("[TutorialManager] Jugador offline instanciado desde PlayerPrefab (sin Network Spawn).");
+        ApplySavedCustomization(offlinePlayer);
+    }
+
+    /// <summary>
+    /// Configura los jugadores extra de la escena como dummies de prueba:
+    /// heredan solo lo visual del jugador local y muestran el nombre del setup.
+    /// Son el blanco del power-up de congelar en el tutorial.
+    /// Prioridad: 1) vinculados en <see cref="TutorialSceneSetup"/>, 2) resto de
+    /// jugadores extra en la escena (fallback por código si el setup está vacío).
+    /// </summary>
+    private void SetupTutorialDummies()
+    {
+        if (offlinePlayer == null) return;
+        PlayerMovementManager localPM = offlinePlayer.GetComponent<PlayerMovementManager>();
+        CharacterCustomizationPreview localPreview = offlinePlayer.GetComponent<CharacterCustomizationPreview>();
+
+        var setup = TutorialSceneSetup.Instance;
+        string displayName = setup != null ? setup.DummyDisplayName : DummyDisplayName;
+        bool copyVisuals = setup == null || setup.CopyVisualsFromLocalPlayer;
+        System.Collections.Generic.List<Vector3> patrolRoute = setup != null ? setup.GetPatrolRouteWorldPositions() : null;
+        // Factor sobre la velocidad viva del personaje (1 = igual que un personaje normal).
+        float patrolSpeedFactor = setup != null ? setup.DummyPatrolSpeedFactor : 1f;
+        float patrolArrive = setup != null ? setup.DummyPatrolArriveDistance : 0.6f;
+
+        var configured = new HashSet<PlayerMovementManager>();
+        string activeScene = SceneManager.GetActiveScene().name;
+
+        // 1) Dummies vinculados explícitamente en el Inspector (no requieren nombre).
+        if (setup != null)
+        {
+            foreach (PlayerMovementManager explicitDummy in setup.DummyPlayers)
+            {
+                if (explicitDummy == null || explicitDummy.gameObject == offlinePlayer) continue;
+                if (!explicitDummy.gameObject.scene.IsValid() || !explicitDummy.gameObject.scene.isLoaded) continue;
+                ConfigureTutorialDummy(explicitDummy, localPM, localPreview, displayName, copyVisuals, patrolRoute, patrolSpeedFactor, patrolArrive);
+                configured.Add(explicitDummy);
+            }
+        }
+
+        // 2) Fallback: cualquier otro jugador extra en la escena también es dummy.
+        foreach (PlayerMovementManager pm in FindObjectsByType<PlayerMovementManager>(FindObjectsSortMode.None))
+        {
+            if (pm == null || pm.gameObject == offlinePlayer || configured.Contains(pm)) continue;
+            if (!pm.gameObject.scene.IsValid() || !pm.gameObject.scene.isLoaded) continue;
+            if (!string.Equals(pm.gameObject.scene.name, activeScene)) continue;
+            ConfigureTutorialDummy(pm, localPM, localPreview, displayName, copyVisuals, patrolRoute, patrolSpeedFactor, patrolArrive);
+        }
+    }
+
+    private void ConfigureTutorialDummy(PlayerMovementManager dummyPM, PlayerMovementManager localPM, CharacterCustomizationPreview localPreview, string displayName, bool copyVisuals, System.Collections.Generic.List<Vector3> patrolRoute, float patrolSpeedFactor, float patrolArrive)
+    {
+        GameObject dummy = dummyPM.gameObject;
+        dummyPM.IsTutorialDummy = true;
+        dummy.SetActive(true);
+
+        // Heredar únicamente lo visual del jugador local (materiales de skin).
+        CharacterCustomizationPreview dummyPreview = dummy.GetComponent<CharacterCustomizationPreview>();
+        if (copyVisuals && dummyPreview != null && localPreview != null)
+        {
+            dummyPreview.CopyVisualsFrom(localPreview);
+        }
+        else
+        {
+            // Sin previews cruzados: aplicar la misma skin guardada (mismo resultado visual).
+            var sync = dummy.GetComponent<NetworkPlayerSkinSynchronizer>();
+            if (sync != null) sync.ApplyOfflineCustomization();
+            else if (dummyPreview != null) dummyPreview.LoadSavedSkinsFromPlayerPrefs();
+        }
+
+        // Nombre visible: el del setup (por defecto "Dummy"), nunca el del usuario.
+        if (dummyPreview != null)
+            dummyPreview.ApplyPlayerName(displayName);
+        LobbyPlayerDisplay display = dummy.GetComponent<LobbyPlayerDisplay>();
+        if (display != null)
+        {
+            display.DisplayNameOverride = displayName;
+            display.UpdatePlayerLabel();
+        }
+
+        // Ruta de patrulla 1 → 2 → … → N → 1 (foto de posiciones tomada del setup).
+        dummyPM.SetDummyPatrolRoute(patrolRoute, patrolSpeedFactor, patrolArrive);
+
+        Debug.Log($"[TutorialManager] Dummy del tutorial configurado: {dummy.name} (visuales del usuario, nombre '{displayName}', puntos de patrulla: {(patrolRoute != null ? patrolRoute.Count : 0)}).");
+    }
+
+    /// <summary>
+    /// Aplica skin y nombre guardados en PlayerPrefs al jugador offline.
+    /// Refuerzo por orden de ejecución: los Start/OnEnable del jugador también lo hacen,
+    /// pero aquí se garantiza aunque el prefab instanciado active sus scripts antes.
+    /// </summary>
+    private void ApplySavedCustomization(GameObject player)
+    {
+        if (player == null) return;
+        var sync = player.GetComponent<NetworkPlayerSkinSynchronizer>();
+        if (sync != null)
+            sync.ApplyOfflineCustomization();
+        else
+        {
+            var preview = player.GetComponent<CharacterCustomizationPreview>();
+            if (preview != null)
+                preview.LoadSavedSkinsFromPlayerPrefs();
+            var display = player.GetComponent<LobbyPlayerDisplay>();
+            if (display != null)
+                display.UpdatePlayerLabel();
+        }
+    }
+
+    private void CleanupOfflinePlayer()
+    {
+        // Solo se destruye el jugador instanciado por código. Los objetos de la escena
+        // (incluido el dummy) mueren con la descarga de la escena al salir.
+        if (offlinePlayer != null && offlinePlayerInstantiated)
+        {
+            Destroy(offlinePlayer);
+        }
+        offlinePlayer = null;
+        offlinePlayerInstantiated = false;
     }
 
     /// <summary>Oculta la UI del temporizador en el tutorial (el timer ya está inactivo fuera de MainScene).</summary>
@@ -289,14 +476,15 @@ public class TutorialManager : MonoBehaviour
     {
         IsTutorial = false;
         CleanupAutoExitButton();
+        CleanupOfflinePlayer();
 
-        if (startHostRoutine != null)
+        if (enterRoutine != null)
         {
-            StopCoroutine(startHostRoutine);
-            startHostRoutine = null;
+            StopCoroutine(enterRoutine);
+            enterRoutine = null;
         }
 
-        Debug.Log("[TutorialManager] Saliendo del tutorial, regresando al menú...");
+        Debug.Log("[TutorialManager] Saliendo del tutorial offline, regresando al menú...");
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
             NetworkManager.Singleton.Shutdown();
 

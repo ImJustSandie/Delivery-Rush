@@ -67,10 +67,33 @@ public class ConnectionUIHandler : MonoBehaviour
 
     private void Start()
     {
+        FixTutorialButtonWiring();
         if (NetworkManager.Singleton != null)
         {
             NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
         }
+    }
+
+    /// <summary>
+    /// Corrige por código el cableado del botón de tutorial.
+    /// En ConnectionScene el objeto "ComoJugar_btn" quedó conectado a StartHost
+    /// (creación de partida + Lobby) en vez de a OpenTutorialScene.
+    /// Como no se pueden modificar escenas, se reasigna aquí en tiempo de ejecución
+    /// para que entre directo al tutorial offline sin crear sesión de red.
+    /// </summary>
+    private void FixTutorialButtonWiring()
+    {
+        GameObject tutorialButtonGO = GameObject.Find("ComoJugar_btn");
+        if (tutorialButtonGO == null) return;
+
+        UnityEngine.UI.Button tutorialButton = tutorialButtonGO.GetComponent<UnityEngine.UI.Button>();
+        if (tutorialButton == null)
+            tutorialButton = tutorialButtonGO.GetComponentInChildren<UnityEngine.UI.Button>(true);
+        if (tutorialButton == null) return;
+
+        tutorialButton.onClick.RemoveAllListeners();
+        tutorialButton.onClick.AddListener(OpenTutorialScene);
+        Debug.Log("[ConnectionUIHandler] ComoJugar_btn reasignado por código a OpenTutorialScene (tutorial offline).");
     }
 
     private void OnDestroy()
@@ -189,12 +212,12 @@ public class ConnectionUIHandler : MonoBehaviour
 
     /// <summary>
     /// Entra al tutorial ("Cómo jugar"): carga la copia de la escena de juego en modo
-    /// local (objetos normales, sin timer ni más jugadores).
+    /// completamente offline (sin Host, sin red, sin Lobby).
     /// Asignar al OnClick del botón ComoJugar_btn del menú principal.
     /// </summary>
     public void OpenTutorialScene()
     {
-        Debug.Log($"[ConnectionUIHandler] Entrando al tutorial: {tutorialSceneName}");
+        Debug.Log($"[ConnectionUIHandler] Entrando al tutorial offline: {tutorialSceneName}");
         TutorialManager.OpenTutorial(tutorialSceneName);
     }
 }

@@ -55,12 +55,25 @@ public class PowerUpCube : NetworkBehaviour
                 trigger.size = boxSolid.size * 1.5f;
             interactionCollider = trigger;
         }
+
+        EnsureFloatAnimation();
+    }
+
+    /// <summary>
+    /// Añade por código la animación de flotar + girar si el prefab no la trae.
+    /// Evita tocar el prefab/escena: funciona para instancias ya colocadas y spawneadas.
+    /// </summary>
+    private void EnsureFloatAnimation()
+    {
+        if (GetComponent<CollectibleFloatAnimation>() == null)
+            gameObject.AddComponent<CollectibleFloatAnimation>();
     }
 
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
         spawnTime = Time.time;
+        GetComponent<CollectibleFloatAnimation>()?.NotifySpawned();
         CollectibleSpawnManager.Instance?.Register(this);
     }
 
@@ -112,11 +125,17 @@ public class PowerUpCube : NetworkBehaviour
     /// Intenta recolectar. En servidor ejecuta directo; en cliente pide vía RPC del cubo
     /// (solo funciona si el invocador tiene permiso; el path fiable para clientes
     /// es <see cref="PlayerMovementManager"/> por proximidad).
+    /// En tutorial offline ejecuta directo sin red.
     /// </summary>
     public bool TryCollect(PlayerMovementManager player)
     {
         if (isCollected || player == null) return false;
         if (!player.CanCarryPowerUp) return false;
+
+        if (TutorialManager.IsTutorial && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening))
+        {
+            return PerformCollectOffline(player);
+        }
 
         if (IsServer)
         {
@@ -181,6 +200,39 @@ public class PowerUpCube : NetworkBehaviour
             netObj.Despawn(true);
         else
             Destroy(gameObject);
+        return true;
+    }
+
+    /// <summary>Recolección offline: sortea el tipo y lo guarda local, sin red.</summary>
+    private bool PerformCollectOffline(PlayerMovementManager targetPlayer)
+    {
+        if (isCollected || targetPlayer == null) return false;
+        if (TutorialManager.IsTutorialDummyPlayer(targetPlayer))
+        {
+            // Excepción del tutorial: el dummy recoge el power-up sin guardarlo
+            // (desaparece al colisionar, sin contar inventario).
+            isCollected = true;
+            Destroy(gameObject);
+            return true;
+        }
+        if (!targetPlayer.CanCarryPowerUp) return false;
+
+        isCollected = true;
+
+        float slowChance = 0.5f;
+        if (CollectibleSpawnManager.Instance != null)
+            slowChance = CollectibleSpawnManager.Instance.SlowPowerUpChance;
+        PowerUpEffect rolled = UnityEngine.Random.value < slowChance ? PowerUpEffect.SlowOthers : PowerUpEffect.BoostSelf;
+
+        bool added = targetPlayer.AddPowerUpServerSide(rolled, 1);
+        if (!added)
+        {
+            isCollected = false;
+            return false;
+        }
+        Debug.Log($"[PowerUpCube] {targetPlayer.name} recogió power-up {rolled} offline.");
+        Collected?.Invoke(targetPlayer);
+        Destroy(gameObject);
         return true;
     }
 }

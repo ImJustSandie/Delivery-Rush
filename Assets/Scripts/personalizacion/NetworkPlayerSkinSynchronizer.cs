@@ -23,8 +23,69 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
     private readonly NetworkVariable<int> netSkinIndex = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private readonly NetworkVariable<FixedString64Bytes> netPlayerName = new NetworkVariable<FixedString64Bytes>("Repartidor", NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-    public string PlayerName => netPlayerName.Value.ToString();
+    public string PlayerName
+    {
+        get
+        {
+            // En tutorial offline no hay red: devolver el nombre guardado local.
+            if (TutorialManager.IsTutorial && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening))
+                return PlayerCustomizationData.PlayerName;
+            return netPlayerName.Value.ToString();
+        }
+    }
     public NetworkVariable<FixedString64Bytes> NetPlayerName => netPlayerName;
+
+    private bool IsOfflineTutorial => TutorialManager.IsTutorial && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening);
+
+    private void Start()
+    {
+        if (IsOfflineTutorial)
+            ApplyOfflineCustomization();
+    }
+
+    private void OnEnable()
+    {
+        if (IsOfflineTutorial)
+            ApplyOfflineCustomization();
+    }
+
+    /// <summary>
+    /// Aplica la personalización guardada en PlayerPrefs sin red (tutorial offline).
+    /// OnNetworkSpawn nunca se ejecuta sin sesión, por eso se necesita esta ruta.
+    /// Si es el dummy del tutorial, aplica la misma skin pero con nombre "Dummy".
+    /// </summary>
+    public void ApplyOfflineCustomization()
+    {
+        if (customizationPreview == null)
+            customizationPreview = GetComponent<CharacterCustomizationPreview>();
+
+        int hat = PlayerCustomizationData.HatIndex;
+        int body = PlayerCustomizationData.BodyIndex;
+        int bag = PlayerCustomizationData.BagIndex;
+        int shirt = PlayerCustomizationData.ShirtIndex;
+        int skin = PlayerCustomizationData.SkinIndex;
+
+        ApplySkin(hat, body, bag, shirt, skin);
+
+        bool isDummy = TutorialManager.IsTutorialDummyObject(gameObject);
+        string dummyName = TutorialManager.ResolveDummyDisplayName();
+        if (isDummy)
+        {
+            customizationPreview?.ApplyPlayerName(dummyName);
+        }
+        else
+        {
+            customizationPreview?.ApplyPlayerName(PlayerCustomizationData.PlayerName);
+        }
+
+        LobbyPlayerDisplay display = GetComponent<LobbyPlayerDisplay>();
+        if (display != null)
+        {
+            if (isDummy)
+                display.DisplayNameOverride = dummyName;
+            display.UpdatePlayerLabel();
+        }
+    }
 
     public override void OnNetworkSpawn()
     {
@@ -77,9 +138,19 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
 
     /// <summary>
     /// Actualiza el nombre del jugador local dinámicamente y lo transmite a la red.
+    /// En tutorial offline lo aplica directo local sin red.
     /// </summary>
     public void UpdatePlayerName(string newName)
     {
+        if (IsOfflineTutorial)
+        {
+            if (string.IsNullOrWhiteSpace(newName)) newName = "Repartidor";
+            if (customizationPreview == null)
+                customizationPreview = GetComponent<CharacterCustomizationPreview>();
+            customizationPreview?.ApplyPlayerName(newName);
+            GetComponent<LobbyPlayerDisplay>()?.UpdatePlayerLabel();
+            return;
+        }
         if (!IsOwner) return;
 
         if (string.IsNullOrWhiteSpace(newName))
@@ -105,9 +176,15 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
 
     /// <summary>
     /// Actualiza la skin del jugador local dinámicamente y la transmite a través del servidor a todos los clientes.
+    /// En tutorial offline la aplica directo local sin red.
     /// </summary>
     public void UpdateSkinSelection(int hat, int body, int bag, int shirt, int skin)
     {
+        if (IsOfflineTutorial)
+        {
+            ApplySkin(hat, body, bag, shirt, skin);
+            return;
+        }
         if (!IsOwner) return;
 
         ApplySkin(hat, body, bag, shirt, skin);

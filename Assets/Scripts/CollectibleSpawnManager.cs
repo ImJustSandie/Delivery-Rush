@@ -124,6 +124,11 @@ public class CollectibleSpawnManager : MonoBehaviour
                 // Delay un frame para que los spawners se registren
                 Invoke(nameof(SpawnInitialBatch), 0.5f);
             }
+            // Tutorial offline: no hay OnServerStarted, generar directo.
+            else if (TutorialManager.IsTutorial && !NetworkManager.Singleton.IsListening && spawnOnStart)
+            {
+                Invoke(nameof(SpawnInitialBatch), 0.5f);
+            }
 
             // Registrar instancias ya colocadas en escena (modo retrocompatibilidad)
             RegisterScenePlacedInstances();
@@ -132,6 +137,9 @@ public class CollectibleSpawnManager : MonoBehaviour
         {
             Debug.LogWarning("[CollectibleSpawnManager] NetworkManager.Singleton no encontrado, el conteo funcionará sin red.");
             RegisterScenePlacedInstances();
+            // Sin NetworkManager también generar lote inicial offline.
+            if (TutorialManager.IsTutorial)
+                Invoke(nameof(SpawnInitialBatch), 0.5f);
         }
     }
 
@@ -158,7 +166,7 @@ public class CollectibleSpawnManager : MonoBehaviour
     private void Update()
     {
         if (autoSpawnInterval <= 0f) return;
-        if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
+        if (!IsServer) return;
         if (Time.time < nextAutoSpawnTime) return;
 
         nextAutoSpawnTime = Time.time + autoSpawnInterval;
@@ -224,8 +232,20 @@ public class CollectibleSpawnManager : MonoBehaviour
     {
         get
         {
+            // Tutorial offline: actuar como servidor local aunque no haya red.
+            if (TutorialManager.IsTutorial && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening))
+                return true;
             if (NetworkManager.Singleton == null) return true; // modo offline/editor
             return NetworkManager.Singleton.IsServer;
+        }
+    }
+
+    /// <summary>True si hay red activa como servidor; false en tutorial offline.</summary>
+    private bool IsNetworkServer
+    {
+        get
+        {
+            return NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && NetworkManager.Singleton.IsServer;
         }
     }
 
@@ -306,7 +326,8 @@ public class CollectibleSpawnManager : MonoBehaviour
         }
 
         NetworkObject instance = Instantiate(prefabToSpawn, position, rotation);
-        if (instance != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+        // Solo hacer Spawn de red si hay sesión activa como servidor; en offline queda como objeto local.
+        if (instance != null && IsNetworkServer)
         {
             instance.Spawn(true);
         }
@@ -336,11 +357,9 @@ public class CollectibleSpawnManager : MonoBehaviour
     /// </summary>
     public bool TrySpawnAt(Vector3 position, Quaternion rotation)
     {
-        if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer)
+        if (!IsServer)
         {
-            // En modo no-network o cliente, no spawnear (authoritative server)
-            // Pero permitir en editor sin NetworkManager para pruebas offline
-            if (NetworkManager.Singleton != null) return false;
+            return false;
         }
 
         if (!CanSpawn) return false;
@@ -427,9 +446,9 @@ public class CollectibleSpawnManager : MonoBehaviour
 
     private bool TrySpawnAtExact(Vector3 position, Quaternion rotation)
     {
-        if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer)
+        if (!IsServer)
         {
-            if (NetworkManager.Singleton != null) return false;
+            return false;
         }
         if (!CanSpawn) return false;
         if (collectiblePrefab == null && powerUpPrefab == null)
@@ -464,7 +483,7 @@ public class CollectibleSpawnManager : MonoBehaviour
 
     private void SpawnInitialBatch()
     {
-        if (NetworkManager.Singleton != null && !NetworkManager.Singleton.IsServer) return;
+        if (!IsServer) return;
 
         // Reintentar si aún no hay spawners registrados pero se requieren
         if (useSpawnersAsSpawnPoints && registeredSpawners.Count == 0 && (spawnPoints == null || spawnPoints.Length == 0))
