@@ -86,6 +86,26 @@ public class LobbyPlayerDisplay : NetworkBehaviour
         StoreOriginalScale();
     }
 
+    private void Start()
+    {
+        // Tutorial offline: OnNetworkSpawn nunca se ejecuta, actualizar etiqueta local igual.
+        if (TutorialManager.IsTutorial && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening))
+        {
+            UpdatePlayerLabel();
+        }
+    }
+
+    private void OnEnable()
+    {
+        // Refuerzo offline por orden de ejecución (el synchronizer puede aplicar skin después).
+        if (TutorialManager.IsTutorial && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening))
+        {
+            // Un frame de retardo no necesario: UpdatePlayerLabel es idempotente y se reintenta
+            // vía ApplyOfflineCustomization del synchronizer.
+            UpdatePlayerLabel();
+        }
+    }
+
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
@@ -284,6 +304,13 @@ public class LobbyPlayerDisplay : NetworkBehaviour
     }
 
     /// <summary>
+    /// Nombre forzado para el label (ej. el dummy del tutorial muestra "Dummy").
+    /// Si no es null/vacío tiene prioridad sobre el nombre de red o guardado.
+    /// Solo código, no tocar en Inspector.
+    /// </summary>
+    public string DisplayNameOverride { get; set; }
+
+    /// <summary>
     /// Obtiene el color correspondiente al slot del jugador.
     /// </summary>
     public Color GetSlotColor(int slotIndex)
@@ -298,6 +325,7 @@ public class LobbyPlayerDisplay : NetworkBehaviour
 
     /// <summary>
     /// Establece el texto y color del identificador del jugador (ej. "Jugador 1", "Jugador 2" o nombre personalizado).
+    /// En tutorial offline usa el nombre guardado en PlayerPrefs aunque IsOwner sea false (sin red).
     /// </summary>
     public void UpdatePlayerLabel()
     {
@@ -308,11 +336,15 @@ public class LobbyPlayerDisplay : NetworkBehaviour
         NetworkPlayerSkinSynchronizer skinSync = GetComponent<NetworkPlayerSkinSynchronizer>();
         string customName = "";
 
-        if (skinSync != null && !string.IsNullOrWhiteSpace(skinSync.PlayerName))
+        if (!string.IsNullOrWhiteSpace(DisplayNameOverride))
+        {
+            customName = DisplayNameOverride;
+        }
+        else if (skinSync != null && !string.IsNullOrWhiteSpace(skinSync.PlayerName))
         {
             customName = skinSync.PlayerName;
         }
-        else if (IsOwner)
+        else if (IsOwner || TutorialManager.IsTutorial)
         {
             customName = PlayerCustomizationData.PlayerName;
         }

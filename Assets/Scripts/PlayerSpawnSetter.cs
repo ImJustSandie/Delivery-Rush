@@ -47,6 +47,18 @@ public class PlayerSpawnSetter : NetworkBehaviour
         UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
+    private void Start()
+    {
+        // El dummy del tutorial conserva la posición que le diste en la escena
+        // (vinculado en TutorialSceneSetup o por nombre "Dummy").
+        if (TutorialManager.IsTutorialDummyObject(gameObject)) return;
+        // Tutorial offline (sin red): OnNetworkSpawn nunca se ejecuta, posicionar directo.
+        if (TutorialManager.IsTutorial && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening))
+        {
+            TryApplySpawnPositionOffline();
+        }
+    }
+
     private void OnDestroy()
     {
         UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnSceneLoaded;
@@ -76,6 +88,13 @@ public class PlayerSpawnSetter : NetworkBehaviour
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        if (TutorialManager.IsTutorialDummyObject(gameObject)) return;
+        if (TutorialManager.IsTutorial && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening))
+        {
+            if (scene.name == lobbySceneName) return;
+            TryApplySpawnPositionOffline();
+            return;
+        }
         if (!IsServer) return;
         if (scene.name == lobbySceneName) return;
 
@@ -130,8 +149,7 @@ public class PlayerSpawnSetter : NetworkBehaviour
     }
 
     public bool TryApplySpawnPosition()
-    {
-        if (SceneManager.GetActiveScene().name == lobbySceneName) return false;
+    {        if (SceneManager.GetActiveScene().name == lobbySceneName) return false;
 
         Vector3 spawnPos = Vector3.zero;
         Quaternion spawnRot = Quaternion.identity;
@@ -231,6 +249,91 @@ public class PlayerSpawnSetter : NetworkBehaviour
 
         Debug.Log($"[PlayerSpawnSetter] Jugador {OwnerClientId} (Slot {assignedSlot}) posicionado en {spawnPos} en la escena {SceneManager.GetActiveScene().name}");
         return true;
+    }
+
+    /// <summary>
+    /// Posicionamiento offline para el tutorial sin red: reutiliza la misma lógica
+    /// de spawn aleatorio / SpawnPoints, pero sin puertas de IsServer ni RPCs.
+    /// </summary>
+    public bool TryApplySpawnPositionOffline()
+    {
+        if (SceneManager.GetActiveScene().name == lobbySceneName) return false;
+
+        Vector3 spawnPos = Vector3.zero;
+        Quaternion spawnRot = Quaternion.identity;
+        bool pointFound = false;
+
+        if (randomizeSpawn && useSpawnerVolumes)
+        {
+            if (TryGetRandomSpawnerPosition(out spawnPos, out spawnRot))
+                pointFound = true;
+        }
+
+        if (!pointFound)
+        {
+            GameObject container = GameObject.Find(spawnPointsContainerName);
+            if (container != null && container.transform.childCount > 0)
+            {
+                if (randomizeSpawn)
+                {
+                    pointFound = TryGetRandomFreeChildPoint(container, out spawnPos, out spawnRot);
+                    if (!pointFound) return false;
+                }
+                else
+                {
+                    Transform slotTransform = container.transform.GetChild(0);
+                    spawnPos = slotTransform.position;
+                    spawnRot = slotTransform.rotation;
+                    pointFound = true;
+                }
+            }
+            else
+            {
+                GameObject singleObj = GameObject.Find(spawnPointObjectName);
+                if (singleObj != null)
+                {
+                    spawnPos = singleObj.transform.position;
+                    spawnRot = singleObj.transform.rotation;
+                    pointFound = true;
+                }
+                else
+                {
+                    // Último recurso: centro del mapa a altura segura.
+                    spawnPos = new Vector3(0f, 5f, 0f);
+                    spawnRot = Quaternion.identity;
+                    pointFound = true;
+                }
+            }
+
+            if (!pointFound) return false;
+        }
+
+        if (snapToGround)
+            spawnPos = GetGroundedPosition(spawnPos);
+        else
+            spawnPos += Vector3.up * spawnHeightOffset;
+
+        if (IsPositionBlocked(spawnPos))
+        {
+            Debug.LogWarning($"[PlayerSpawnSetter] Spawn offline descartado en {spawnPos}: dentro de un obstáculo.");
+            return false;
+        }
+
+        ApplySpawnPositionOffline(spawnPos, spawnRot);
+        Debug.Log($"[PlayerSpawnSetter] Jugador offline posicionado en {spawnPos} en la escena {SceneManager.GetActiveScene().name}");
+        return true;
+    }
+
+    private void ApplySpawnPositionOffline(Vector3 position, Quaternion rotation)
+    {
+        CharacterController cc = GetComponent<CharacterController>();
+        if (cc != null) cc.enabled = false;
+        transform.position = position;
+        transform.rotation = rotation;
+        if (cc != null) cc.enabled = true;
+        // Fija el suelo autorizado para el bloqueo de altura en juego/tutorial.
+        PlayerMovementManager pm = GetComponent<PlayerMovementManager>();
+        if (pm != null) pm.SetAuthorizedGroundY(position.y);
     }
 
     /// <summary>
@@ -361,6 +464,10 @@ public class PlayerSpawnSetter : NetworkBehaviour
         transform.rotation = rotation;
 
         if (cc != null && IsOwner) cc.enabled = true;
+
+        // Fija el suelo autorizado para el bloqueo de altura en juego/tutorial.
+        PlayerMovementManager pm = GetComponent<PlayerMovementManager>();
+        if (pm != null) pm.SetAuthorizedGroundY(position.y);
     }
 
 #if UNITY_EDITOR

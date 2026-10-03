@@ -124,8 +124,8 @@ public class CollectibleSpawner : MonoBehaviour
             return;
         }
 
-        // Solo el servidor debe instanciar NetworkObjects
-        if (NetworkManager.Singleton != null && !NetworkManager.Singleton.IsServer)
+        // Solo el servidor debe instanciar NetworkObjects; en tutorial offline se permite local.
+        if (!IsServerLike())
             return;
 
         if (!manager.CanSpawn)
@@ -146,10 +146,19 @@ public class CollectibleSpawner : MonoBehaviour
         if (Time.time - lastSpawnTime < spawnCooldown) return false;
         CollectibleSpawnManager manager = CollectibleSpawnManager.Instance;
         if (manager == null || !manager.CanSpawn) return false;
-        if (NetworkManager.Singleton != null && !NetworkManager.Singleton.IsServer) return false;
+        if (!IsServerLike()) return false;
         bool ok = manager.RequestSpawnFromSpawner(this);
         if (ok) lastSpawnTime = Time.time;
         return ok;
+    }
+
+    /// <summary>En red exige ser servidor; en tutorial offline siempre permite (instanciación local).</summary>
+    private bool IsServerLike()
+    {
+        if (TutorialManager.IsTutorial && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening))
+            return true;
+        if (NetworkManager.Singleton == null) return true;
+        return NetworkManager.Singleton.IsServer;
     }
 
 #if UNITY_EDITOR

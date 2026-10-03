@@ -41,6 +41,7 @@ public class PowerUpUI : MonoBehaviour
     [SerializeField] private string breakdownFormat = "Ralentizar: {0} | Velocidad: {1}";
 
     private bool isSubscribed;
+    private int lastShownPowerUps = int.MinValue;
 
     private void Awake()
     {
@@ -70,7 +71,17 @@ public class PowerUpUI : MonoBehaviour
             useButton.onClick.AddListener(OnUseButtonPressed);
 
         TryBindToLocalPlayer();
+        // Reintento persistente (igual que CollectibleCounterUI): valida el vínculo cada tick.
+        CancelInvoke(nameof(TryBindToLocalPlayer));
         InvokeRepeating(nameof(TryBindToLocalPlayer), 0.5f, 0.5f);
+    }
+
+    private void Update()
+    {
+        // Respaldo por polling: refleja el inventario aunque se pierda un evento.
+        if (targetPlayer == null || !IsValidSceneReference(targetPlayer)) return;
+        if (targetPlayer.PowerUpCount != lastShownPowerUps)
+            RefreshUI();
     }
 
     private void OnDisable()
@@ -88,13 +99,16 @@ public class PowerUpUI : MonoBehaviour
             Unsubscribe();
             targetPlayer = null;
         }
-        if (targetPlayer != null && isSubscribed) return;
+        if (targetPlayer != null && isSubscribed)
+        {
+            RefreshUI();
+            return;
+        }
 
         if (targetPlayer == null)
             targetPlayer = FindLocalPlayer();
         if (targetPlayer == null) return;
 
-        CancelInvoke(nameof(TryBindToLocalPlayer));
         Subscribe();
         RefreshUI();
     }
@@ -102,20 +116,36 @@ public class PowerUpUI : MonoBehaviour
     private static bool IsValidSceneReference(PlayerMovementManager pm)
     {
         if (pm == null) return false;
+        // El dummy del tutorial nunca es el jugador local del HUD.
+        if (TutorialManager.IsTutorialDummyPlayer(pm)) return false;
         GameObject go = pm.gameObject;
         if (go == null) return false;
         var scene = go.scene;
         if (!scene.IsValid() || !scene.isLoaded) return false;
+        // Solo vale el jugador de la escena activa (evita restos de otra escena).
+        if (!string.Equals(scene.name, UnityEngine.SceneManagement.SceneManager.GetActiveScene().name)) return false;
         return true;
     }
 
     private static PlayerMovementManager FindLocalPlayer()
     {
+        PlayerMovementManager first = null;
         foreach (PlayerMovementManager pm in FindObjectsByType<PlayerMovementManager>(FindObjectsSortMode.None))
         {
+            if (pm == null) continue;
+            // El dummy del tutorial no es el jugador local.
+            if (TutorialManager.IsTutorialDummyPlayer(pm)) continue;
+            if (!pm.gameObject.scene.IsValid() || !pm.gameObject.scene.isLoaded) continue;
+            if (!string.Equals(pm.gameObject.scene.name, UnityEngine.SceneManagement.SceneManager.GetActiveScene().name)) continue;
+            if (first == null) first = pm;
             if (pm.IsOwner)
                 return pm;
         }
+        // Sin red (tutorial offline o escena abierta directo): aceptar el jugador de la escena.
+        if (first != null && (Unity.Netcode.NetworkManager.Singleton == null || !Unity.Netcode.NetworkManager.Singleton.IsListening))
+            return first;
+        if (TutorialManager.IsTutorial && first != null)
+            return first;
         return null;
     }
 
@@ -160,6 +190,7 @@ public class PowerUpUI : MonoBehaviour
         int boost = targetPlayer.BoostPowerUpCount;
         int total = slow + boost;
         int max = targetPlayer.MaxPowerUps;
+        lastShownPowerUps = total;
 
         // Textos por tipo (dicen qué power-up tienes)
         if (slowText != null)

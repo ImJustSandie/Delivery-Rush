@@ -51,7 +51,11 @@ public class CharacterCustomizationPreview : MonoBehaviour
     {
         // No cargar automátiamente PlayerPrefs en objetos que tienen NetworkPlayerSkinSynchronizer,
         // ya que la red (NGO) se encarga de determinar si es el owner o remoto.
-        if (autoLoadFromPlayerPrefs && GetComponent<NetworkPlayerSkinSynchronizer>() == null)
+        // Excepción: tutorial offline (sin red), donde el synchronizer nunca recibe OnNetworkSpawn
+        // y por tanto hay que cargar local igual.
+        bool isOfflineTutorial = TutorialManager.IsTutorial
+            && (Unity.Netcode.NetworkManager.Singleton == null || !Unity.Netcode.NetworkManager.Singleton.IsListening);
+        if (autoLoadFromPlayerPrefs && (GetComponent<NetworkPlayerSkinSynchronizer>() == null || isOfflineTutorial))
         {
             LoadSavedSkinsFromPlayerPrefs();
         }
@@ -113,6 +117,30 @@ public class CharacterCustomizationPreview : MonoBehaviour
     public void ApplySkinMaterial(Material newMat)
     {
         ApplyMaterialToRenderer(skinRenderer, skinMaterialIndex, newMat);
+    }
+
+    /// <summary>
+    /// Copia los materiales visibles desde otro preview (ej. el dummy del tutorial
+    /// hereda solo lo visual del jugador local). No copia índices ni PlayerPrefs.
+    /// </summary>
+    public void CopyVisualsFrom(CharacterCustomizationPreview source)
+    {
+        if (source == null) return;
+        CopyRendererMaterials(source.hatRenderer, hatRenderer);
+        CopyRendererMaterials(source.bodyRenderer, bodyRenderer);
+        CopyRendererMaterials(source.bagRenderer, bagRenderer);
+        CopyRendererMaterials(source.shirtRenderer, shirtRenderer);
+        CopyRendererMaterials(source.skinRenderer, skinRenderer);
+    }
+
+    private static void CopyRendererMaterials(Renderer from, Renderer to)
+    {
+        if (from == null || to == null) return;
+        try { to.sharedMaterials = from.sharedMaterials; }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[CharacterCustomizationPreview] No se pudieron copiar materiales: {e.Message}");
+        }
     }
 
     private void ApplyMaterialToRenderer(Renderer rend, int index, Material newMat)
