@@ -121,13 +121,15 @@ public class ClientConnectionUIHandler : MonoBehaviour
         }
 
         string targetIP = defaultAddress;
+        string rawInput = "";
         if (ipInputField != null && !string.IsNullOrWhiteSpace(ipInputField.text))
         {
-            targetIP = ipInputField.text.Trim();
+            rawInput = ipInputField.text.Trim();
+            targetIP = RoomCodeUtility.CodeToIP(rawInput, defaultAddress);
         }
 
         transport.SetConnectionData(targetIP, port);
-        Debug.Log($"[ClientConnectionUIHandler] Configurando IP de conexion a: {targetIP}:{port}");
+        Debug.Log($"[ClientConnectionUIHandler] Configurando IP de conexion a: {targetIP}:{port} (Input: '{rawInput}')");
 
         if (NetworkManager.Singleton.IsListening)
         {
@@ -138,7 +140,8 @@ public class ClientConnectionUIHandler : MonoBehaviour
 
         if (success)
         {
-            StartConnectingAnimation($"Conectando a {targetIP}:{port}");
+            string displayInfo = !string.IsNullOrEmpty(rawInput) ? rawInput.ToUpper() : targetIP;
+            StartConnectingAnimation($"Conectando a sala [{displayInfo}] ({targetIP})");
         }
         else
         {

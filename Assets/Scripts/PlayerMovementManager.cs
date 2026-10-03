@@ -96,6 +96,10 @@ public class PlayerMovementManager : NetworkBehaviour
     public event Action<int> ScoreChanged;
     public event Action<int> PowerUpCountChanged;
     public event Action<PlayerNetworkState> NetworkStateChanged;
+    public event Action<int, PowerUpEffect> PowerUpAdded;
+    public event Action<int> PowerUpUsed;
+    public event Action PowerUpPromoted;
+    public event Action PowerUpCleared;
 
     public bool IsMoving { get; private set; }
     // Nuevo: IsCarrying ahora refleja si lleva al menos 1 recolectable. Se mantiene compatibilidad con código antiguo basado en carriedInteractable.
@@ -125,6 +129,21 @@ public class PlayerMovementManager : NetworkBehaviour
                 return offlinePowerUps.Count > 0 ? (PowerUpEffect)Mathf.Clamp(offlinePowerUps[0], 0, 1) : null;
             return powerUpQueue.Count > 0 ? (PowerUpEffect)Mathf.Clamp(powerUpQueue[0], 0, 1) : null;
         }
+    }
+
+    /// <summary>Devuelve el power-up en el índice especificado (0=primario, 1=secundario). Null si está vacío.</summary>
+    public PowerUpEffect? GetPowerUpAt(int index)
+    {
+        if (index < 0) return null;
+        if (IsOfflineTutorial)
+        {
+            if (index < offlinePowerUps.Count)
+                return (PowerUpEffect)Mathf.Clamp(offlinePowerUps[index], 0, 1);
+            return null;
+        }
+        if (index < powerUpQueue.Count)
+            return (PowerUpEffect)Mathf.Clamp(powerUpQueue[index], 0, 1);
+        return null;
     }
 
     private int CountOfflinePowerUpType(PowerUpEffect type)
@@ -289,6 +308,20 @@ public class PlayerMovementManager : NetworkBehaviour
     private void OnPowerUpQueueChanged(NetworkListEvent<int> changeEvent)
     {
         RefreshPowerUpState();
+        if (changeEvent.Type == NetworkListEvent<int>.EventType.Add)
+        {
+            PowerUpEffect effect = (PowerUpEffect)Mathf.Clamp(changeEvent.Value, 0, 1);
+            PowerUpAdded?.Invoke(changeEvent.Index, effect);
+        }
+        else if (changeEvent.Type == NetworkListEvent<int>.EventType.RemoveAt && changeEvent.Index == 0)
+        {
+            PowerUpUsed?.Invoke(0);
+            PowerUpPromoted?.Invoke();
+        }
+        else if (changeEvent.Type == NetworkListEvent<int>.EventType.Clear)
+        {
+            PowerUpCleared?.Invoke();
+        }
     }
 
     private void RefreshPowerUpState()
@@ -999,6 +1032,9 @@ public class PlayerMovementManager : NetworkBehaviour
         TryUsePowerUp(powerUpButtonEffect);
     }
 
+    /// <summary>Indica si el uso de power-ups está bloqueado temporalmente (ej. durante la animación de ruleta).</summary>
+    public bool IsPowerUpLocked { get; set; }
+
     /// <summary>
     /// Usa el power-up al frente de la cola FIFO. Solo el owner lo invoca (botón UI);
     /// el servidor valida, desencola y aplica el efecto.
@@ -1009,6 +1045,11 @@ public class PlayerMovementManager : NetworkBehaviour
     public void TryUsePowerUp(PowerUpEffect effect)
     {
         if (!IsOwner && !IsOfflineTutorial) return;
+        if (IsPowerUpLocked)
+        {
+            Debug.Log($"[PlayerMovementManager] {name} no puede usar el power-up: animación de ruleta/transición activa.");
+            return;
+        }
         if (!HasPowerUp)
         {
             Debug.Log($"[PlayerMovementManager] {name} no tiene power-ups para usar.");
@@ -1127,7 +1168,11 @@ public class PlayerMovementManager : NetworkBehaviour
         int allowed = Mathf.Min(amount, maxPowerUps - offlinePowerUps.Count);
         if (allowed <= 0) return false;
         for (int i = 0; i < allowed; i++)
+        {
             offlinePowerUps.Add((int)effect);
+            int addedIndex = offlinePowerUps.Count - 1;
+            PowerUpAdded?.Invoke(addedIndex, effect);
+        }
         RefreshPowerUpState();
         return true;
     }
@@ -1136,6 +1181,8 @@ public class PlayerMovementManager : NetworkBehaviour
     {
         if (offlinePowerUps.Count <= 0) return;
         offlinePowerUps.RemoveAt(0);
+        PowerUpUsed?.Invoke(0);
+        PowerUpPromoted?.Invoke();
         Debug.Log($"[PlayerMovementManager] {name} usa power-up {effect} offline (cola restante: {offlinePowerUps.Count}).");
         RefreshPowerUpState();
         if (effect == PowerUpEffect.BoostSelf)

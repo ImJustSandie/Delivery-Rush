@@ -263,7 +263,7 @@ MonoBehaviour:
   - {fileID: 710325463}
   - {fileID: 91161725}
   - {fileID: 1972330696}
-  dummyPatrolSpeed: 3.5
+  dummyPatrolSpeedFactor: 1
   dummyPatrolArriveDistance: 0.6
 --- !u!4 &68797738
 Transform:
@@ -530,7 +530,7 @@ MonoBehaviour:
   m_ScaleFactor: 1
   m_ReferenceResolution: {x: 1920, y: 1080}
   m_ScreenMatchMode: 0
-  m_MatchWidthOrHeight: 0
+  m_MatchWidthOrHeight: 0.7
   m_PhysicalUnit: 3
   m_FallbackScreenDPI: 96
   m_DefaultSpriteDPI: 96

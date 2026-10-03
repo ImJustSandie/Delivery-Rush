@@ -58,7 +58,8 @@ public class ConnectionUIHandler : MonoBehaviour
         string targetIP = defaultAddress;
         if (ipInputField != null && !string.IsNullOrWhiteSpace(ipInputField.text))
         {
-            targetIP = ipInputField.text.Trim();
+            string rawInput = ipInputField.text.Trim();
+            targetIP = RoomCodeUtility.CodeToIP(rawInput, defaultAddress);
         }
 
         transport.SetConnectionData(targetIP, port);

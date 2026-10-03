@@ -571,13 +571,17 @@ MonoBehaviour:
   maxCollected: 5
   maxPowerUps: 2
   slowMultiplier: 0.5
-  boostMultiplier: 1.5
+  boostMultiplier: 1.4
   powerUpEffectDuration: 5
   powerUpButtonEffect: 1
   powerUpButton: {fileID: 0}
   gravity: 0
   collectRadius: 1.5
   lobbySceneName: Lobby
+  lockHeightInGame: 1
+  gameSceneName: MainScene
+  maxStepUpHeight: 0.5
+  gameStepOffset: 0
 --- !u!114 &4411515086426812283
 MonoBehaviour:
   m_ObjectHideFlags: 0

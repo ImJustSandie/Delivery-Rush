@@ -156,13 +156,22 @@ public class LobbyUIHandler : MonoBehaviour
             }
         }
 
+        string roomCode = RoomCodeUtility.IPToCode(address);
+
         try
         {
-            ipAddressText.text = string.Format(ipTextFormat, address, port);
+            if (ipTextFormat == "{0}" || string.IsNullOrEmpty(ipTextFormat))
+            {
+                ipAddressText.text = $"Código de Sala: {roomCode}";
+            }
+            else
+            {
+                ipAddressText.text = string.Format(ipTextFormat, roomCode, port);
+            }
         }
         catch
         {
-            ipAddressText.text = address;
+            ipAddressText.text = $"Código: {roomCode}";
         }
     }
 
@@ -298,21 +307,30 @@ public class LobbyUIHandler : MonoBehaviour
     }
 
     /// <summary>
-    /// Copia el texto visible de la IP al portapapeles del sistema.
+    /// Copia el código de la sala al portapapeles del sistema.
     /// </summary>
     public void CopyIpToClipboard()
     {
         if (ipAddressText == null) return;
 
-        string ip = ipAddressText.text;
-        if (string.IsNullOrWhiteSpace(ip))
+        string address = GetLocalIPAddress();
+        if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
         {
-            Debug.LogWarning("[LobbyUIHandler] No hay IP para copiar (texto vacío).");
-            return;
+            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+            if (transport != null && !NetworkManager.Singleton.IsServer)
+            {
+                string targetAddress = transport.ConnectionData.Address;
+                if (!string.IsNullOrEmpty(targetAddress) && targetAddress != "0.0.0.0" && targetAddress != "127.0.0.1")
+                {
+                    address = targetAddress;
+                }
+            }
         }
 
-        GUIUtility.systemCopyBuffer = ip.Trim();
-        Debug.Log($"[LobbyUIHandler] IP copiada al portapapeles: {ip.Trim()}");
+        string roomCode = RoomCodeUtility.IPToCode(address);
+
+        GUIUtility.systemCopyBuffer = roomCode;
+        Debug.Log($"[LobbyUIHandler] Código de sala copiado al portapapeles: {roomCode} (IP: {address})");
     }
 
     /// <summary>
