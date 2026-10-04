@@ -571,7 +571,7 @@ MonoBehaviour:
   maxCollected: 5
   maxPowerUps: 2
   slowMultiplier: 0.5
-  boostMultiplier: 1.4
+  boostMultiplier: 1.3
   powerUpEffectDuration: 5
   powerUpButtonEffect: 1
   powerUpButton: {fileID: 0}
@@ -780,7 +780,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PowerUpVisuals
   boostModel: {fileID: 698388105266984164, guid: 6dd2643b71dd69043bfbf7a592172e5f, type: 3}
-  slowMaterial: {fileID: 2100000, guid: 6de24b906416ac346aa4c1a92fee467c, type: 2}
+  slowMaterial: {fileID: 2100000, guid: b273d92cc001f8b4399b9cc9334dca6f, type: 2}
   matchPlayerTransform: 1
   boostYawOffset: 0
   boostYOffset: 0.4

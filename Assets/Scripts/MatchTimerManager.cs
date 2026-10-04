@@ -94,7 +94,7 @@ public class MatchTimerManager : NetworkBehaviour
             timerRunning.Value = true;
             netStartServerTime.Value = NetworkManager.Singleton != null ? NetworkManager.Singleton.ServerTime.Time : serverStartTime;
         }
-        else if (IsServer && autoStartOnMainScene && IsInMainScene())
+        else if (IsServer && autoStartOnMainScene && IsInMainScene() && MatchCountdownManager.Instance == null)
         {
             StartTimer();
         }
@@ -147,6 +147,7 @@ public class MatchTimerManager : NetworkBehaviour
         // Solo el servidor debe iniciar el timer; clientes nunca inician por fallback
         if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
         if (IsRunning) return;
+        if (MatchCountdownManager.Instance != null && MatchCountdownManager.Instance.IsCountdownActive) return;
         StartTimer();
     }
 

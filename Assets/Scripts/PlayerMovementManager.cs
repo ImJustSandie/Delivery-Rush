@@ -111,6 +111,9 @@ public class PlayerMovementManager : NetworkBehaviour
     public int Score => IsOfflineTutorial ? offlineScore : deliveredScore.Value;
     public float MoveSpeed { get => moveSpeed; set => moveSpeed = value; }
 
+    /// <summary>Flag global para permitir/bloquear el movimiento de los jugadores (ej. durante el conteo inicial 3, 2, 1).</summary>
+    public static bool AllowMovement { get; set; } = true;
+
     // ── Inventario de power-ups: cola FIFO (el primero que entra es el primero que sale) ──
     public int SlowPowerUpCount => IsOfflineTutorial ? CountOfflinePowerUpType(PowerUpEffect.SlowOthers) : CountPowerUpType(PowerUpEffect.SlowOthers);
     public int BoostPowerUpCount => IsOfflineTutorial ? CountOfflinePowerUpType(PowerUpEffect.BoostSelf) : CountPowerUpType(PowerUpEffect.BoostSelf);
@@ -666,6 +669,17 @@ public class PlayerMovementManager : NetworkBehaviour
         if (IsDummy)
         {
             if (IsOfflineTutorial) UpdateDummyPatrol();
+            return;
+        }
+
+        // Si el movimiento está bloqueado por conteo inicial (3, 2, 1), detener al jugador (Host y Clientes)
+        bool isCountdownActive = MatchCountdownManager.Instance != null &&
+                                 MatchCountdownManager.Instance.IsCountdownActive &&
+                                 MatchCountdownManager.Instance.CurrentCountdownValue > 0;
+
+        if (!AllowMovement || isCountdownActive)
+        {
+            SetIsMoving(false);
             return;
         }
 

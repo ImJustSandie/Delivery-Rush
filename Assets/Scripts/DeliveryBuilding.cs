@@ -24,6 +24,9 @@ public class DeliveryBuilding : MonoBehaviour
     [Tooltip("Log cuando un jugador entrega.")]
     [SerializeField] private bool logOnDeposit = true;
 
+    /// <summary>Evento emitido cuando un jugador realiza un depósito de puntos exitoso.</summary>
+    public event System.Action<PlayerMovementManager> OnDepositSuccessful;
+
     private Collider triggerCollider;
     private readonly Dictionary<ulong, float> lastDepositByPlayer = new Dictionary<ulong, float>();
 
@@ -72,6 +75,7 @@ public class DeliveryBuilding : MonoBehaviour
         if (deposited)
         {
             lastDepositByPlayer[playerId] = Time.time;
+            OnDepositSuccessful?.Invoke(player);
             if (logOnDeposit)
                 Debug.Log($"[DeliveryBuilding] {player.name} entregó en {name} -> puntuación {player.Score} | inventario {player.CollectedCount}/{player.MaxCollected}");
         }
@@ -81,7 +85,12 @@ public class DeliveryBuilding : MonoBehaviour
     public bool TryForceDeposit(PlayerMovementManager player)
     {
         if (player == null || player.CollectedCount <= 0) return false;
-        return player.TryDeposit();
+        bool deposited = player.TryDeposit();
+        if (deposited)
+        {
+            OnDepositSuccessful?.Invoke(player);
+        }
+        return deposited;
     }
 
 #if UNITY_EDITOR
