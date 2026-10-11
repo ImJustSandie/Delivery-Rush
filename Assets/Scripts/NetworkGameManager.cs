@@ -78,7 +78,7 @@ public class NetworkGameManager : MonoBehaviour
             ResetGame();
             if (SceneManager.GetActiveScene().name != connectionSceneName)
             {
-                SceneManager.LoadScene(connectionSceneName);
+                DiagonalSceneTransition.TransitionTo(connectionSceneName);
             }
         }
     }
@@ -222,7 +222,7 @@ public class NetworkGameManager : MonoBehaviour
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && NetworkManager.Singleton.IsServer)
         {
             Debug.Log($"[NetworkGameManager] Transicionando a todos los jugadores a la escena de Lobby: {lobbySceneName}");
-            NetworkManager.Singleton.SceneManager.LoadScene(lobbySceneName, LoadSceneMode.Single);
+            DiagonalSceneTransition.TransitionTo(lobbySceneName);
         }
         else
         {
@@ -245,7 +245,7 @@ public class NetworkGameManager : MonoBehaviour
 
         if (SceneManager.GetActiveScene().name != connectionSceneName)
         {
-            SceneManager.LoadScene(connectionSceneName);
+            DiagonalSceneTransition.TransitionTo(connectionSceneName);
         }
     }
 }

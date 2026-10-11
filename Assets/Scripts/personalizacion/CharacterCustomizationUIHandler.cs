@@ -309,7 +309,7 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
 
     public void ReturnToConnectionScene()
     {
-        UnityEngine.SceneManagement.SceneManager.LoadScene(connectionSceneName);
+        DiagonalSceneTransition.TransitionTo(connectionSceneName);
     }
 
     /// <summary>

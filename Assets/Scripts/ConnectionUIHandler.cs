@@ -113,7 +113,7 @@ public class ConnectionUIHandler : MonoBehaviour
             Debug.Log("[ConnectionUIHandler] Desconectado del servidor. Regresando a la escena de conexión...");
             if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name != "ConnectionScene")
             {
-                UnityEngine.SceneManagement.SceneManager.LoadScene("ConnectionScene");
+                DiagonalSceneTransition.TransitionTo("ConnectionScene");
             }
         }
     }
@@ -143,7 +143,7 @@ public class ConnectionUIHandler : MonoBehaviour
 
         if (NetworkManager.Singleton.IsServer)
         {
-            NetworkManager.Singleton.SceneManager.LoadScene(lobbySceneName, UnityEngine.SceneManagement.LoadSceneMode.Single);
+            DiagonalSceneTransition.TransitionTo(lobbySceneName);
         }
     }
 
@@ -189,7 +189,7 @@ public class ConnectionUIHandler : MonoBehaviour
 
         if (NetworkManager.Singleton.IsServer)
         {
-            NetworkManager.Singleton.SceneManager.LoadScene(lobbySceneName, UnityEngine.SceneManagement.LoadSceneMode.Single);
+            DiagonalSceneTransition.TransitionTo(lobbySceneName);
         }
     }
 
@@ -199,7 +199,7 @@ public class ConnectionUIHandler : MonoBehaviour
     public void OpenClientScene()
     {
         Debug.Log($"[ConnectionUIHandler] Cambiando a la escena del cliente: {clientSceneName}");
-        UnityEngine.SceneManagement.SceneManager.LoadScene(clientSceneName);
+        DiagonalSceneTransition.TransitionTo(clientSceneName);
     }
 
     /// <summary>
@@ -208,7 +208,7 @@ public class ConnectionUIHandler : MonoBehaviour
     public void OpenCustomizationScene()
     {
         Debug.Log($"[ConnectionUIHandler] Cambiando a la escena de personalización: {customizationSceneName}");
-        UnityEngine.SceneManagement.SceneManager.LoadScene(customizationSceneName);
+        DiagonalSceneTransition.TransitionTo(customizationSceneName);
     }
 
     /// <summary>

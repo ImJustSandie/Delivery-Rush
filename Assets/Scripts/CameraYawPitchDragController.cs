@@ -37,14 +37,12 @@ public class CameraYawPitchDragController : MonoBehaviour
     [SerializeField] private GameObject interactButtonObject;
 
     [Header("Debug")]
-    [SerializeField] private bool debugLogs;
     [SerializeField] private bool initializeFromCurrentTransform = true;
 
     private float yaw;
     private float pitch;
     private bool draggingMouse;
     private int activeTouchId = -1;
-    private bool targetNullWarned;
 
     private void OnEnable()
     {
@@ -91,7 +89,6 @@ public class CameraYawPitchDragController : MonoBehaviour
         Mouse mouse = Mouse.current;
         if (mouse == null)
         {
-            if (debugLogs) Debug.LogWarning("[CameraDrag] Mouse.current es null.");
             return;
         }
 
@@ -100,7 +97,6 @@ public class CameraYawPitchDragController : MonoBehaviour
             Vector2 pos = mouse.position.ReadValue();
             bool inZone = IsInDragZone(pos);
             bool overUI = IsOverBlockingUI(pos);
-            if (debugLogs) Debug.Log($"[CameraDrag] Mouse press en {pos} inZone={inZone} overUI={overUI} width={Screen.width}");
             if (inZone && !overUI)
                 draggingMouse = true;
         }
@@ -111,7 +107,6 @@ public class CameraYawPitchDragController : MonoBehaviour
             if (delta.sqrMagnitude > 0f)
             {
                 ApplyDelta(delta);
-                if (debugLogs) Debug.Log($"[CameraDrag] Mouse delta {delta} yaw={yaw:F1} pitch={pitch:F1}");
             }
         }
 
@@ -131,7 +126,6 @@ public class CameraYawPitchDragController : MonoBehaviour
             {
                 bool inZone = IsInDragZone(pos);
                 bool overUI = IsOverBlockingUI(pos);
-                if (debugLogs) Debug.Log($"[CameraDrag] Touch {touchId} began en {pos} inZone={inZone} overUI={overUI}");
                 if (inZone && !overUI)
                     activeTouchId = touchId;
             }
@@ -141,8 +135,6 @@ public class CameraYawPitchDragController : MonoBehaviour
                 {
                     Vector2 delta = touch.delta;
                     ApplyDelta(delta);
-                    if (debugLogs && delta.sqrMagnitude > 0f)
-                        Debug.Log($"[CameraDrag] Touch {touchId} delta {delta} yaw={yaw:F1} pitch={pitch:F1}");
                 }
 
                 if (phase == UnityEngine.InputSystem.TouchPhase.Ended || phase == UnityEngine.InputSystem.TouchPhase.Canceled)
@@ -228,14 +220,8 @@ public class CameraYawPitchDragController : MonoBehaviour
     {
         if (target == null)
         {
-            if (!targetNullWarned)
-            {
-                Debug.LogWarning("[CameraDrag] Target sin asignar: la camara no se movera. Arrastra el jugador al campo Target.");
-                targetNullWarned = true;
-            }
             return;
         }
-        targetNullWarned = false;
 
         Camera controlledCamera = GetComponent<Camera>();
         Transform cameraTransform = controlledCamera != null ? controlledCamera.transform : transform;

@@ -183,7 +183,7 @@ public class TutorialManager : MonoBehaviour
             NetworkGameManager.Instance.ResetGame(true);
 
         Debug.Log($"[TutorialManager] Cargando escena de tutorial offline: {sceneName}");
-        SceneManager.LoadScene(sceneName);
+        DiagonalSceneTransition.TransitionTo(sceneName);
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -492,13 +492,13 @@ public class TutorialManager : MonoBehaviour
             NetworkGameManager.Instance.ResetGame(true);
 
         if (SceneManager.GetActiveScene().name != connectionSceneName)
-            SceneManager.LoadScene(connectionSceneName);
+            DiagonalSceneTransition.TransitionTo(connectionSceneName);
     }
 
     /// <summary>Salida estática por si se necesita desde código sin referencia a la instancia.</summary>
     public static void ExitToMenu()
     {
         if (Instance != null) Instance.ExitTutorial();
-        else SceneManager.LoadScene("ConnectionScene");
+        else DiagonalSceneTransition.TransitionTo("ConnectionScene");
     }
 }

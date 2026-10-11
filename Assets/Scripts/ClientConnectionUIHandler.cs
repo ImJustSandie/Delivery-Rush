@@ -166,7 +166,7 @@ public class ClientConnectionUIHandler : MonoBehaviour
 
         if (!string.IsNullOrEmpty(previousSceneName))
         {
-            SceneManager.LoadScene(previousSceneName);
+            DiagonalSceneTransition.TransitionTo(previousSceneName);
         }
         else
         {

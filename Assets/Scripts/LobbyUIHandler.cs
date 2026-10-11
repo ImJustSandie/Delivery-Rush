@@ -41,6 +41,11 @@ public class LobbyUIHandler : MonoBehaviour
 
     private void Start()
     {
+        // Retener la transición cerrada hasta que el layout del lobby (escala y
+        // posiciones de personajes, aplicadas en varios roundtrips de red) termine.
+        DiagonalSceneTransition.Hold();
+        StartCoroutine(ReleaseTransitionWhenLobbyReady());
+
         EnsureCanvasWorldCamera();
 
         if (NetworkManager.Singleton == null)
@@ -106,7 +111,7 @@ public class LobbyUIHandler : MonoBehaviour
             Debug.Log("[LobbyUIHandler] Se perdió la conexión con el servidor/host. Regresando a la escena de conexión...");
             if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name != connectionSceneName)
             {
-                UnityEngine.SceneManagement.SceneManager.LoadScene(connectionSceneName);
+                DiagonalSceneTransition.TransitionTo(connectionSceneName);
             }
         }
     }
@@ -350,10 +355,39 @@ public class LobbyUIHandler : MonoBehaviour
             {
                 NetworkManager.Singleton.Shutdown();
             }
-            UnityEngine.SceneManagement.SceneManager.LoadScene(connectionSceneName);
+            DiagonalSceneTransition.TransitionTo(connectionSceneName);
         }
     }
 
+
+    /// <summary>
+    /// Libera la transición una vez que cada jugador del lobby está posicionado
+    /// en su slot (o tras un timeout). Oculta el acomodo de personajes al entrar.
+    /// </summary>
+    private System.Collections.IEnumerator ReleaseTransitionWhenLobbyReady()
+    {
+        float timeout = 6f;
+        float waited = 0f;
+        while (waited < timeout)
+        {
+            if (AreAllLobbyPlayersPositioned()) break;
+            yield return null;
+            waited += Time.unscaledDeltaTime;
+        }
+        DiagonalSceneTransition.Release();
+    }
+
+    private bool AreAllLobbyPlayersPositioned()
+    {
+        LobbyPlayerDisplay[] players = FindObjectsByType<LobbyPlayerDisplay>(FindObjectsSortMode.None);
+        if (players == null || players.Length == 0) return false;
+        foreach (LobbyPlayerDisplay player in players)
+        {
+            if (player == null) continue;
+            if (!player.IsLobbyPositionApplied) return false;
+        }
+        return true;
+    }
 
     /// <summary>
     /// Metodo ejecutado al pulsar el boton "Jugar".
@@ -382,6 +416,6 @@ public class LobbyUIHandler : MonoBehaviour
         string targetScene = (NetworkGameManager.Instance != null) ? NetworkGameManager.Instance.MainSceneName : mainSceneName;
 
         Debug.Log($"[LobbyUIHandler] Iniciando partida... Cambiando a escena: {targetScene}");
-        NetworkManager.Singleton.SceneManager.LoadScene(targetScene, UnityEngine.SceneManagement.LoadSceneMode.Single);
+        DiagonalSceneTransition.TransitionTo(targetScene);
     }
 }

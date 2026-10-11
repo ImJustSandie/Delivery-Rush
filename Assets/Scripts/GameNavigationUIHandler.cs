@@ -77,7 +77,7 @@ public class GameNavigationUIHandler : MonoBehaviour
         else if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && NetworkManager.Singleton.IsServer)
         {
             Debug.Log($"[GameNavigationUIHandler] Cargando escena de lobby: {lobbySceneName}");
-            NetworkManager.Singleton.SceneManager.LoadScene(lobbySceneName, UnityEngine.SceneManagement.LoadSceneMode.Single);
+            DiagonalSceneTransition.TransitionTo(lobbySceneName);
         }
         else
         {
@@ -102,7 +102,7 @@ public class GameNavigationUIHandler : MonoBehaviour
             {
                 NetworkManager.Singleton.Shutdown();
             }
-            UnityEngine.SceneManagement.SceneManager.LoadScene(connectionSceneName);
+            DiagonalSceneTransition.TransitionTo(connectionSceneName);
         }
     }
 }

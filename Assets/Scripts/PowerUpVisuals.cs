@@ -1,17 +1,19 @@
 using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
-/// Visuales temporales de power-ups en el jugador (componente del prefab Player).
-/// Tiene 2 items a asignar en el Inspector:
+/// Visuales y sonidos de power-ups en el jugador (componente del prefab Player).
+/// Tiene 2 items visuales a asignar en el Inspector:
 /// 1. boostModel: modelo alternativo (hijo desactivado) que reemplaza al normal
 ///    mientras la velocidad está aumentada.
 /// 2. slowMaterial: material que reemplaza temporalmente todas las texturas
 ///    mientras el jugador está ralentizado.
+/// Más 2 sonidos de activación (ver "Audio"): hielo global y moto solo-caster.
 /// Lo maneja <see cref="PlayerMovementManager"/> según el efecto activo en red,
 /// así todos los clientes ven el cambio. Al terminar la duración todo se restaura solo.
 /// </summary>
-public class PowerUpVisuals : MonoBehaviour
+public class PowerUpVisuals : NetworkBehaviour
 {
     [Header("Boost: cambio de modelo")]
     [Tooltip("ITEM 1: modelo alternativo (GameObject hijo, debe iniciar desactivado) visible solo durante el aumento de velocidad.")]
@@ -28,6 +30,18 @@ public class PowerUpVisuals : MonoBehaviour
     [SerializeField] private float boostYawOffset;
     [Tooltip("Desplazamiento vertical (offset en Y) para la posición local del modelo boost.")]
     [SerializeField] private float boostYOffset;
+
+    [Header("Audio")]
+    [Tooltip("Sonido al activar congelar (SlowOthers). Lo escuchan todos los clientes.")]
+    [SerializeField] private AudioClip slowPowerUpSound;
+    [Tooltip("Volumen del sonido de congelar (0 a 1).")]
+    [Range(0f, 1f)]
+    [SerializeField] private float slowPowerUpSoundVolume = 1f;
+    [Tooltip("Sonido al activar moto/velocidad (BoostSelf). Solo lo escucha quien lo usa.")]
+    [SerializeField] private AudioClip boostPowerUpSound;
+    [Tooltip("Volumen del sonido de moto (0 a 1).")]
+    [Range(0f, 1f)]
+    [SerializeField] private float boostPowerUpSoundVolume = 1f;
 
     private Renderer[] normalRenderers = System.Array.Empty<Renderer>();
     private Renderer[] boostRenderers = System.Array.Empty<Renderer>();
@@ -108,6 +122,48 @@ public class PowerUpVisuals : MonoBehaviour
             ApplySlowOverlay();
         else
             ClearSlowOverlay();
+    }
+
+    // ── Audio de activación (eventos, no estado visual) ──────────────────────
+
+    /// <summary>Emite el sonido de congelar a todos. Solo la invoca el servidor al activar SlowOthers.</summary>
+    public void PlaySlowSoundServerSide()
+    {
+        if (!IsServer) return;
+        PlaySlowSoundClientRpc();
+    }
+
+    /// <summary>Emite el sonido de moto solo al cliente indicado. Solo la invoca el servidor al activar BoostSelf.</summary>
+    public void PlayBoostSoundServerSide(ulong casterClientId)
+    {
+        if (!IsServer) return;
+        PlayBoostSoundClientRpc(transform.position, RpcTarget.Single(casterClientId, RpcTargetUse.Temp));
+    }
+
+    /// <summary>Sonido de congelar en local (tutorial offline).</summary>
+    public void PlaySlowSoundLocal()
+    {
+        GameAudioManager.PlayOneShot2D(slowPowerUpSound, slowPowerUpSoundVolume);
+    }
+
+    /// <summary>Sonido de moto en local (tutorial offline).</summary>
+    public void PlayBoostSoundLocal(Vector3 boostPosition)
+    {
+        InteractableCube.PlayCollectSoundAt(boostPowerUpSound, boostPosition, boostPowerUpSoundVolume);
+    }
+
+    /// <summary>Sonido de congelar: lo escuchan todos los clientes (2D global).</summary>
+    [Rpc(SendTo.Everyone)]
+    private void PlaySlowSoundClientRpc()
+    {
+        GameAudioManager.PlayOneShot2D(slowPowerUpSound, slowPowerUpSoundVolume);
+    }
+
+    /// <summary>Sonido de moto: solo lo escucha el cliente indicado.</summary>
+    [Rpc(SendTo.SpecifiedInParams)]
+    private void PlayBoostSoundClientRpc(Vector3 boostPosition, RpcParams rpcParams = default)
+    {
+        InteractableCube.PlayCollectSoundAt(boostPowerUpSound, boostPosition, boostPowerUpSoundVolume);
     }
 
     private void ApplySlowOverlay()

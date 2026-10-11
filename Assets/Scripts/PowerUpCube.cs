@@ -24,6 +24,13 @@ public class PowerUpCube : NetworkBehaviour
     [Tooltip("Tiempo de protección tras spawnear para no ser recolectado instantáneamente.")]
     [SerializeField] private float collectProtectionTime = 0.5f;
 
+    [Header("Collect Audio")]
+    [Tooltip("Sonido al recolectar. Se asigna desde el prefab.")]
+    [SerializeField] private AudioClip collectSound;
+    [Tooltip("Volumen del sonido de recolección (0 a 1).")]
+    [Range(0f, 1f)]
+    [SerializeField] private float collectSoundVolume = 1f;
+
     private Collider solidCollider;
     private Collider interactionCollider;
     private float spawnTime;
@@ -154,6 +161,13 @@ public class PowerUpCube : NetworkBehaviour
         PerformCollect(playerNetworkObjectId);
     }
 
+    /// <summary>Reproduce el sonido de recolección SOLO en el cliente que recolectó (3D posicional en el punto de recolección).</summary>
+    [Rpc(SendTo.SpecifiedInParams)]
+    private void PlayCollectSoundClientRpc(Vector3 collectPosition, RpcParams rpcParams = default)
+    {
+        InteractableCube.PlayCollectSoundAt(collectSound, collectPosition, collectSoundVolume);
+    }
+
     private bool PerformCollect(ulong playerNetworkObjectId)
     {
         if (isCollected) return false;
@@ -195,6 +209,9 @@ public class PowerUpCube : NetworkBehaviour
         Debug.Log($"[PowerUpCube] {targetPlayer.name} recogió power-up {rolled} (ralentizar={targetPlayer.SlowPowerUpCount} velocidad={targetPlayer.BoostPowerUpCount}).");
         Collected?.Invoke(targetPlayer);
 
+        // Sonido solo para quien recolectó, antes de desaparecer (el objeto se destruye y no podria reproducirlo).
+        PlayCollectSoundClientRpc(transform.position, RpcTarget.Single(playerObj.OwnerClientId, RpcTargetUse.Temp));
+
         var netObj = GetComponent<NetworkObject>();
         if (netObj != null && netObj.IsSpawned)
             netObj.Despawn(true);
@@ -232,6 +249,7 @@ public class PowerUpCube : NetworkBehaviour
         }
         Debug.Log($"[PowerUpCube] {targetPlayer.name} recogió power-up {rolled} offline.");
         Collected?.Invoke(targetPlayer);
+        InteractableCube.PlayCollectSoundAt(collectSound, transform.position, collectSoundVolume);
         Destroy(gameObject);
         return true;
     }

@@ -466,6 +466,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
       insertIndex: -1
       addedObject: {fileID: 6740284991500185772}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: -5347165962434130195}
   m_SourcePrefab: {fileID: 100100000, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}
 --- !u!95 &1689356896730951807 stripped
 Animator:
@@ -529,7 +532,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 3288990597
+  GlobalObjectIdHash: 954140668
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -784,6 +787,21 @@ MonoBehaviour:
   matchPlayerTransform: 1
   boostYawOffset: 0
   boostYOffset: 0.4
+--- !u!114 &-5347165962434130195
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5393677782440784063}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c8c272a7a6ec09d4ea9d0622bdfca257, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerLocalAudioListener
+  ShowTopMostFoldoutHeaderGroup: 1
+  lobbySceneName: Lobby
+  podiumSceneName: Podio
 --- !u!137 &5541584880571454512 stripped
 SkinnedMeshRenderer:
   m_CorrespondingSourceObject: {fileID: 791774380976937438, guid: 61ade93649a7cd64f8e92e9f477ebd7d, type: 3}

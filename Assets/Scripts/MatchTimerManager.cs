@@ -250,9 +250,9 @@ public class MatchTimerManager : NetworkBehaviour
         RemainingTimeChanged?.Invoke(0f);
         MatchEnded?.Invoke();
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
-            NetworkManager.Singleton.SceneManager.LoadScene(podiumSceneName, LoadSceneMode.Single);
+            DiagonalSceneTransition.TransitionTo(podiumSceneName);
         else if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
-            SceneManager.LoadScene(podiumSceneName);
+            DiagonalSceneTransition.TransitionTo(podiumSceneName);
     }
 
     public string GetFormattedTime()

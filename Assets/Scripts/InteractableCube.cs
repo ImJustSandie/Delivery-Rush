@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -34,6 +35,23 @@ public class InteractableCube : NetworkBehaviour
     private float spawnTime;
     [Tooltip("Tiempo de protección tras spawnear para no ser recolectado instantáneamente si spawnea sobre el jugador.")]
     [SerializeField] private float collectProtectionTime = 0.5f;
+
+    [Header("Collect Audio")]
+    [Tooltip("Sonido al recolectar. Se asigna desde el prefab.")]
+    [SerializeField] private AudioClip collectSound;
+    [Tooltip("Volumen del sonido de recolección (0 a 1).")]
+    [Range(0f, 1f)]
+    [SerializeField] private float collectSoundVolume = 1f;
+
+    [Header("Model Variants")]
+    [Tooltip("Modelos visuales hijos entre los que se sortea uno al instanciar (ej. los 8 modelos del prefab). Si se deja vacío, se detectan solos los hijos directos desactivados por defecto.")]
+    [SerializeField] private List<GameObject> modelVariants = new List<GameObject>();
+
+    [Tooltip("Índice de la variante visible (-1 = sin sortear). Solo el servidor escribe, todos aplican.")]
+    private NetworkVariable<int> activeVariantIndex = new NetworkVariable<int>(-1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    private readonly List<GameObject> resolvedVariants = new List<GameObject>();
+    private bool variantsResolved;
 
     private void Awake()
     {
@@ -72,16 +90,87 @@ public class InteractableCube : NetworkBehaviour
             gameObject.AddComponent<CollectibleFloatAnimation>();
     }
 
+    // ── Variantes visuales (un modelo visible por instancia) ────────────────
+
+    /// <summary>Sorteo previo al Spawn de red (solo servidor): el índice queda listo y viaja replicado con el spawn.</summary>
+    public void RollVariantServerSide()
+    {
+        if (IsSpawned) return;
+        int index = DrawRandomVariantIndex();
+        if (index < 0) return;
+        activeVariantIndex.Value = index;
+        ApplyVariant(index);
+    }
+
+    private void OnVariantIndexChanged(int previous, int current)
+    {
+        ApplyVariant(current);
+    }
+
+    /// <summary>Sortea el índice de la variante a mostrar. Retorna -1 si no hay variantes.</summary>
+    private int DrawRandomVariantIndex()
+    {
+        ResolveVariants();
+        if (resolvedVariants.Count == 0) return -1;
+        return UnityEngine.Random.Range(0, resolvedVariants.Count);
+    }
+
+    /// <summary>Activa solo la variante indicada y apaga las demás. Sin variantes, no hace nada.</summary>
+    private void ApplyVariant(int index)
+    {
+        ResolveVariants();
+        if (resolvedVariants.Count == 0) return;
+        if (index < 0 || index >= resolvedVariants.Count)
+        {
+            index = UnityEngine.Random.Range(0, resolvedVariants.Count);
+        }
+        for (int i = 0; i < resolvedVariants.Count; i++)
+        {
+            if (resolvedVariants[i] != null)
+                resolvedVariants[i].SetActive(index == i);
+        }
+    }
+
+    /// <summary>
+    /// Resuelve los modelos una sola vez: los asignados en el prefab o, si la
+    /// lista está vacía, los hijos directos desactivados por defecto.
+    /// Se cachea porque al activar una variante dejaría de detectarse.
+    /// </summary>
+    private void ResolveVariants()
+    {
+        if (variantsResolved) return;
+        variantsResolved = true;
+        foreach (GameObject go in modelVariants)
+        {
+            if (go != null && !resolvedVariants.Contains(go))
+                resolvedVariants.Add(go);
+        }
+        if (resolvedVariants.Count > 0) return;
+        foreach (Transform child in transform)
+        {
+            if (child != null && !child.gameObject.activeSelf)
+                resolvedVariants.Add(child.gameObject);
+        }
+    }
+
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
         spawnTime = Time.time;
         GetComponent<CollectibleFloatAnimation>()?.NotifySpawned();
         CollectibleSpawnManager.Instance?.Register(this);
+        activeVariantIndex.OnValueChanged += OnVariantIndexChanged;
+        // El servidor sortea si aún no hay índice (p.ej. objeto colocado en escena); los clientes aplican el replicado.
+        if (IsServer && activeVariantIndex.Value < 0)
+        {
+            activeVariantIndex.Value = DrawRandomVariantIndex();
+        }
+        ApplyVariant(activeVariantIndex.Value);
     }
 
     public override void OnNetworkDespawn()
     {
+        activeVariantIndex.OnValueChanged -= OnVariantIndexChanged;
         CollectibleSpawnManager.Instance?.Unregister(this);
         base.OnNetworkDespawn();
     }
@@ -108,6 +197,12 @@ public class InteractableCube : NetworkBehaviour
         RefreshCarriedState();
         RefreshGroundedState(groundTouchThisStep || cubeRigidbody == null);
         PublishCubeState(true);
+        // Sin red (tutorial offline u objeto aún no spawneado): sorteo local.
+        // En red el servidor corrige con el índice autoritativo en OnNetworkSpawn.
+        if (!IsSpawned)
+        {
+            ApplyVariant(DrawRandomVariantIndex());
+        }
     }
 
     private void FixedUpdate()
@@ -224,6 +319,20 @@ public class InteractableCube : NetworkBehaviour
         PerformCollect(playerNetworkObjectId);
     }
 
+    /// <summary>Reproduce el sonido de recolección SOLO en el cliente que recolectó (3D posicional en el punto de recolección).</summary>
+    [Rpc(SendTo.SpecifiedInParams)]
+    private void PlayCollectSoundClientRpc(Vector3 collectPosition, RpcParams rpcParams = default)
+    {
+        PlayCollectSoundAt(collectSound, collectPosition, collectSoundVolume);
+    }
+
+    /// <summary>Reproduce un clip puntual sin depender del GameObject (sobrevive al despawn/destroy).</summary>
+    public static void PlayCollectSoundAt(AudioClip clip, Vector3 position, float volume)
+    {
+        if (clip == null) return;
+        AudioSource.PlayClipAtPoint(clip, position, Mathf.Clamp01(volume));
+    }
+
     private bool PerformCollect(ulong playerNetworkObjectId)
     {
         if (isCollected) return false;
@@ -258,6 +367,9 @@ public class InteractableCube : NetworkBehaviour
             return false;
         }
         Collected?.Invoke(targetPlayer);
+
+        // Sonido solo para quien recolectó, antes de desaparecer (el objeto se destruye y no podria reproducirlo).
+        PlayCollectSoundClientRpc(transform.position, RpcTarget.Single(playerObj.OwnerClientId, RpcTargetUse.Temp));
 
         // Desaparecer automáticamente (Network despawn). Libera slot en CollectibleSpawnManager.
         PublishCubeState(true);
@@ -300,6 +412,7 @@ public class InteractableCube : NetworkBehaviour
         }
         Collected?.Invoke(targetPlayer);
         PublishCubeState(true);
+        PlayCollectSoundAt(collectSound, transform.position, collectSoundVolume);
         Destroy(gameObject);
         return true;
     }

@@ -326,6 +326,12 @@ public class CollectibleSpawnManager : MonoBehaviour
         }
 
         NetworkObject instance = Instantiate(prefabToSpawn, position, rotation);
+        // Sorteo del modelo visible antes del Spawn para que el índice viaje replicado desde el inicio.
+        if (instance != null && IsNetworkServer && !isPowerUp)
+        {
+            InteractableCube cubePre = instance.GetComponent<InteractableCube>();
+            if (cubePre != null) cubePre.RollVariantServerSide();
+        }
         // Solo hacer Spawn de red si hay sesión activa como servidor; en offline queda como objeto local.
         if (instance != null && IsNetworkServer)
         {

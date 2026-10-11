@@ -66,6 +66,13 @@ public class PlayerMovementManager : NetworkBehaviour
     [Tooltip("Puntuación total entregada en edificio. Solo el servidor escribe.")]
     private NetworkVariable<int> deliveredScore = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+    [Header("Deposit Audio")]
+    [Tooltip("Sonido al entregar objetos en la torre. Se asigna desde el prefab del jugador. Solo lo oye quien deposita.")]
+    [SerializeField] private AudioClip depositSound;
+    [Tooltip("Volumen del sonido de entrega (0 a 1).")]
+    [Range(0f, 1f)]
+    [SerializeField] private float depositSoundVolume = 1f;
+
     // ── Respaldo offline (tutorial sin red) ───────────────────────────────
     // Cuando TutorialManager.IsOfflineTutorial es true, las NetworkVariables /
     // NetworkList no se usan: el inventario vive en estos campos locales.
@@ -230,10 +237,13 @@ public class PlayerMovementManager : NetworkBehaviour
 
     private CharacterController characterController;
     private Camera cachedPlayerCamera;
+    private Renderer[] cachedMeshRenderers;
+    private bool[] cachedMeshRendererStates;
 
     private void Awake()
     {
         EnsureCharacterController();
+        StoreRendererStates();
         if (characterController != null)
             defaultStepOffset = characterController.stepOffset;
         baseMoveSpeed = moveSpeed;
@@ -264,12 +274,14 @@ public class PlayerMovementManager : NetworkBehaviour
         if (IsOwner)
         {
             SetupInputActions();
-            // Asegurar que el controlador de cámara siga a este jugador local
+            // La cámara solo sigue al jugador en escena de juego; en menús se queda
+            // apagada (ver UpdateCameraState) para no mover la vista al spawnear.
             CameraYawPitchDragController camController = GetComponentInChildren<CameraYawPitchDragController>(true);
             if (camController != null)
             {
-                camController.enabled = true;
-                camController.SetTarget(transform);
+                bool followCam = IsGameplayScene();
+                camController.enabled = followCam;
+                if (followCam) camController.SetTarget(transform);
             }
             if (characterController != null) characterController.enabled = true;
         }
@@ -298,14 +310,12 @@ public class PlayerMovementManager : NetworkBehaviour
         CollectedCountChanged?.Invoke(current);
         RefreshCarryingState();
         PublishPlayerState(true);
-        Debug.Log($"[PlayerMovementManager] {name} recolectados: {current}");
     }
 
     private void OnScoreChanged(int previous, int current)
     {
         ScoreChanged?.Invoke(current);
         PublishPlayerState(true);
-        Debug.Log($"[PlayerMovementManager] {name} puntuación: {current}");
     }
 
     private void OnPowerUpQueueChanged(NetworkListEvent<int> changeEvent)
@@ -331,7 +341,6 @@ public class PlayerMovementManager : NetworkBehaviour
     {
         PowerUpCountChanged?.Invoke(PowerUpCount);
         PublishPlayerState(true);
-        Debug.Log($"[PlayerMovementManager] {name} power-ups: ralentizar={SlowPowerUpCount} velocidad={BoostPowerUpCount} (cola FIFO, tope {maxPowerUps})");
     }
 
     // ── Visuales de power-up (visibles para todos) ───────────────────────
@@ -506,7 +515,6 @@ public class PlayerMovementManager : NetworkBehaviour
         if (!enabled)
         {
             enabled = true;
-            Debug.Log($"[PlayerMovementManager] {name} re-activado al cargar escena {scene.name}");
         }
 
         // Nueva escena = nueva referencia de altura (el spawn la fijará; si no, se sondea).
@@ -518,6 +526,7 @@ public class PlayerMovementManager : NetworkBehaviour
 
         // Re-activar el controlador de cámara si fue desactivado (ej. por PodiumManager)
         // El dummy queda fuera: quieto, sin cámara ni input.
+        // En menús (no gameplay, no podio) se mantiene apagado.
         if ((IsOwner || IsOfflineTutorial) && !IsDummy)
         {
             CameraYawPitchDragController camController = GetComponentInChildren<CameraYawPitchDragController>(true);
@@ -525,8 +534,10 @@ public class PlayerMovementManager : NetworkBehaviour
             {
                 string currentScene = scene.name;
                 bool inLobby = (currentScene == lobbySceneName);
-                camController.enabled = !inLobby;
-                if (!inLobby) camController.SetTarget(transform);
+                bool inPodium = string.Equals(currentScene, "Podio");
+                bool enableCtrl = !inLobby && (IsGameplayScene(currentScene) || inPodium);
+                camController.enabled = enableCtrl;
+                if (enableCtrl) camController.SetTarget(transform);
             }
 
             SetupInputActions();
@@ -535,28 +546,34 @@ public class PlayerMovementManager : NetworkBehaviour
 
     /// <summary>
     /// Activa o desactiva la cámara del personaje según la escena activa y la autoridad (IsOwner).
-    /// En el Lobby la cámara del personaje siempre está desactivada para usar la Main Camera del Lobby.
-    /// En el juego (MainScene) la cámara se activa únicamente para el jugador local (IsOwner).
+    /// La cámara del personaje SOLO se enciende en escena de juego (MainScene) o tutorial offline.
+    /// En menús (Connection, Customization, Lobby) y Podio permanece apagada para que la vista
+    /// no salte a la cámara del personaje recién spawneado antes de que cierre la transición.
+    /// En el Lobby se usa la Main Camera del Lobby; en Podio la del PodiumManager.
     /// En tutorial offline se trata como jugador local aunque IsOwner sea false (sin red).
     /// </summary>
     private void UpdateCameraState()
     {
         string currentScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
         bool inLobby = (currentScene == lobbySceneName);
+        // En Podio el audio y la vista los pone la camara del podio (ver PodiumManager).
+        bool inPodium = string.Equals(currentScene, "Podio");
         bool isLocal = (IsOwner || IsOfflineTutorial) && !IsDummy;
+        bool inGameplay = IsGameplayScene(currentScene);
 
         Camera cam = GetComponentInChildren<Camera>(true);
-        AudioListener listener = GetComponentInChildren<AudioListener>(true);
+        AudioListener[] listeners = GetComponentsInChildren<AudioListener>(true);
 
-        if (!isLocal || inLobby)
+        // El AudioListener solo vive en el jugador local fuera de Lobby/Podio.
+        // PlayerLocalAudioListener aplica la misma regla; aqui se mantiene
+        // consistente para que camara y audio no diverjan.
+        bool enableAudio = isLocal && !inLobby && !inPodium;
+        bool enableCam = isLocal && inGameplay;
+
+        if (cam != null) cam.enabled = enableCam;
+        foreach (AudioListener listener in listeners)
         {
-            if (cam != null) cam.enabled = false;
-            if (listener != null) listener.enabled = false;
-        }
-        else
-        {
-            if (cam != null) cam.enabled = true;
-            if (listener != null) listener.enabled = true;
+            if (listener != null) listener.enabled = enableAudio;
         }
 
         // Habilitar/deshabilitar los Canvases e interfaz del jugador según si es el dueño y está en partida (no en lobby)
@@ -582,13 +599,78 @@ public class PlayerMovementManager : NetworkBehaviour
         {
             powerUpButton.gameObject.SetActive(showUI);
         }
+
+        // El cuerpo del personaje solo se ve donde debe existir visualmente
+        // (Lobby, Podio, juego, tutorial). En menús de conexión se oculta para
+        // que no se alcance a ver pequeño al spawnear antes de la transición.
+        bool showMesh = currentScene == lobbySceneName
+            || IsPodiumSceneName(currentScene)
+            || IsGameplayScene(currentScene);
+        UpdateMeshVisibility(showMesh);
+    }
+
+    /// <summary>
+    /// True solo en escena de juego (MainScene) o en tutorial offline.
+    /// Todo lo demás (Connection, Customization, Lobby, Podio...) es menú:
+    /// la cámara del personaje debe permanecer apagada.
+    /// </summary>
+    private bool IsGameplayScene()
+    {
+        return IsGameplayScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
+    }
+
+    private bool IsGameplayScene(string sceneName)
+    {
+        if (IsOfflineTutorial) return true;
+        return sceneName == gameSceneName;
+    }
+
+    /// <summary>
+    /// True para las variantes de nombre de la escena de podio ("Podio"/"Podium").
+    /// </summary>
+    private bool IsPodiumSceneName(string sceneName)
+    {
+        return sceneName == "Podio" || sceneName == "Podium";
+    }
+
+    /// <summary>
+    /// Guarda el estado original de los renderers del prefab para restaurarlo
+    /// al volver a una escena donde el personaje sí debe verse.
+    /// </summary>
+    private void StoreRendererStates()
+    {
+        cachedMeshRenderers = GetComponentsInChildren<Renderer>(true);
+        cachedMeshRendererStates = new bool[cachedMeshRenderers.Length];
+        for (int i = 0; i < cachedMeshRenderers.Length; i++)
+        {
+            cachedMeshRendererStates[i] = cachedMeshRenderers[i] != null && cachedMeshRenderers[i].enabled;
+        }
+    }
+
+    /// <summary>
+    /// Muestra u oculta el cuerpo del personaje restaurando su estado original.
+    /// Los dummies quedan intactos (siempre visibles donde están colocados).
+    /// </summary>
+    private void UpdateMeshVisibility(bool visible)
+    {
+        if (IsDummy) return;
+        if (cachedMeshRenderers == null || cachedMeshRendererStates == null
+            || cachedMeshRenderers.Length != cachedMeshRendererStates.Length)
+        {
+            StoreRendererStates();
+        }
+        for (int i = 0; i < cachedMeshRenderers.Length; i++)
+        {
+            Renderer meshRenderer = cachedMeshRenderers[i];
+            if (meshRenderer == null) continue;
+            meshRenderer.enabled = visible && cachedMeshRendererStates[i];
+        }
     }
 
     private void SetupInputActions()
     {
         if (actionsAsset == null)
         {
-            Debug.LogWarning($"{name}: asignar InputSystem_Actions a actionsAsset en el Inspector.");
             return;
         }
 
@@ -872,7 +954,6 @@ public class PlayerMovementManager : NetworkBehaviour
         float distance = Vector3.Distance(transform.position, cubeObj.transform.position);
         if (distance > collectRadius * 3f)
         {
-            Debug.Log($"[PlayerMovementManager] {name} demasiado lejos del collectible {cube.name}: {distance:F1}m");
             return;
         }
 
@@ -896,7 +977,6 @@ public class PlayerMovementManager : NetworkBehaviour
         float distance = Vector3.Distance(transform.position, powerObj.transform.position);
         if (distance > collectRadius * 3f)
         {
-            Debug.Log($"[PlayerMovementManager] {name} demasiado lejos del power-up {powerUp.name}: {distance:F1}m");
             return;
         }
 
@@ -959,7 +1039,6 @@ public class PlayerMovementManager : NetworkBehaviour
         // Recolección ahora es automática por trigger (InteractableCube.TryCollect).
         // Se mantiene el hook por compatibilidad pero ya no hace pickup manual.
         // Si quieres mantener interacción legacy, descomenta el bloque TryPickUp.
-        LogState();
     }
 
     private void DropCarried()
@@ -967,12 +1046,6 @@ public class PlayerMovementManager : NetworkBehaviour
         if (carriedInteractable == null) return;
         carriedInteractable.Drop();
         carriedInteractable = null;
-        LogState();
-    }
-
-    private void LogState()
-    {
-        Debug.Log($"[PlayerMovementManager] recolectados: {CollectedCount} | cargando cubo (legacy): {carriedInteractable != null}");
     }
 
     /// <summary>Llamado por InteractableCube al ser pisado (hitbox trigger). Solo el servidor incrementa NetworkVariable.</summary>
@@ -981,7 +1054,6 @@ public class PlayerMovementManager : NetworkBehaviour
         if (amount <= 0) return false;
         if (IsInventoryFull)
         {
-            Debug.Log($"[PlayerMovementManager] {name} inventario lleno ({CollectedCount}/{maxCollected}), no se puede recolectar.");
             return false;
         }
         if (IsOfflineTutorial)
@@ -1061,18 +1133,15 @@ public class PlayerMovementManager : NetworkBehaviour
         if (!IsOwner && !IsOfflineTutorial) return;
         if (IsPowerUpLocked)
         {
-            Debug.Log($"[PlayerMovementManager] {name} no puede usar el power-up: animación de ruleta/transición activa.");
             return;
         }
         if (!HasPowerUp)
         {
-            Debug.Log($"[PlayerMovementManager] {name} no tiene power-ups para usar.");
             return;
         }
         PowerUpEffect? front = FrontPowerUp;
         if (effect != PowerUpEffect.Random && front != effect)
         {
-            Debug.Log($"[PlayerMovementManager] {name} el primero de la cola es {front} (pedido {effect}): sale el primero que entró.");
             return;
         }
         if (IsOfflineTutorial)
@@ -1171,7 +1240,6 @@ public class PlayerMovementManager : NetworkBehaviour
         CollectedCountChanged?.Invoke(offlineCollected);
         RefreshCarryingState();
         PublishPlayerState(true);
-        Debug.Log($"[PlayerMovementManager] {name} recolectados (offline): {offlineCollected}");
         return true;
     }
 
@@ -1197,12 +1265,12 @@ public class PlayerMovementManager : NetworkBehaviour
         offlinePowerUps.RemoveAt(0);
         PowerUpUsed?.Invoke(0);
         PowerUpPromoted?.Invoke();
-        Debug.Log($"[PlayerMovementManager] {name} usa power-up {effect} offline (cola restante: {offlinePowerUps.Count}).");
         RefreshPowerUpState();
         if (effect == PowerUpEffect.BoostSelf)
         {
             ApplySpeedEffectLocal(boostMultiplier, powerUpEffectDuration);
             SetVisualEffectOffline(1, powerUpEffectDuration);
+            GetComponent<PowerUpVisuals>()?.PlayBoostSoundLocal(transform.position);
         }
         else
         {
@@ -1211,11 +1279,11 @@ public class PlayerMovementManager : NetworkBehaviour
             PlayerMovementManager[] dummies = FindTutorialDummies();
             if (dummies.Length == 0)
             {
-                Debug.Log($"[PlayerMovementManager] {name} usó congelar offline pero no hay dummy en el tutorial: sin objetivo.");
                 return;
             }
             foreach (PlayerMovementManager dummy in dummies)
                 dummy.ApplyFreezeEffectOffline(powerUpEffectDuration);
+            GetComponent<PowerUpVisuals>()?.PlaySlowSoundLocal();
         }
     }
 
@@ -1247,7 +1315,6 @@ public class PlayerMovementManager : NetworkBehaviour
     {
         ApplySpeedEffectLocal(slowMultiplier, duration);
         SetVisualEffectOffline(2, duration);
-        Debug.Log($"[PlayerMovementManager] {name} congelado offline durante {duration}s.");
     }
 
     private void ApplySpeedEffectLocal(float multiplier, float duration)
@@ -1283,7 +1350,7 @@ public class PlayerMovementManager : NetworkBehaviour
         ScoreChanged?.Invoke(offlineScore);
         RefreshCarryingState();
         PublishPlayerState(true);
-        Debug.Log($"[PlayerMovementManager] {name} entregó {amount} offline -> puntuación {offlineScore}");
+        InteractableCube.PlayCollectSoundAt(depositSound, transform.position, depositSoundVolume);
         return true;
     }
 
@@ -1316,13 +1383,13 @@ public class PlayerMovementManager : NetworkBehaviour
 
         powerUpQueue.RemoveAt(0);
         PowerUpEffect effect = front;
-        Debug.Log($"[PlayerMovementManager] {name} usa power-up {effect} (cola restante: {powerUpQueue.Count}).");
 
         if (effect == PowerUpEffect.BoostSelf)
         {
             // Aumenta temporalmente la velocidad solo del caster + cambio de modelo visible para todos.
             ApplySpeedEffectClientRpc(boostMultiplier, powerUpEffectDuration);
             SetVisualEffectServerSide(1, powerUpEffectDuration);
+            GetComponent<PowerUpVisuals>()?.PlayBoostSoundServerSide(OwnerClientId);
         }
         else
         {
@@ -1333,6 +1400,7 @@ public class PlayerMovementManager : NetworkBehaviour
                 other.ApplySpeedEffectClientRpc(slowMultiplier, powerUpEffectDuration);
                 other.SetVisualEffectServerSide(2, powerUpEffectDuration);
             }
+            GetComponent<PowerUpVisuals>()?.PlaySlowSoundServerSide();
         }
     }
 
@@ -1353,11 +1421,9 @@ public class PlayerMovementManager : NetworkBehaviour
     private IEnumerator SpeedEffectRoutine(float multiplier, float duration)
     {
         moveSpeed = baseMoveSpeed * multiplier;
-        Debug.Log($"[PlayerMovementManager] {name} efecto de velocidad x{multiplier} durante {duration}s.");
         yield return new WaitForSeconds(duration);
         moveSpeed = baseMoveSpeed;
         speedEffectCoroutine = null;
-        Debug.Log($"[PlayerMovementManager] {name} velocidad restaurada a {baseMoveSpeed}.");
     }
 
     // ── Entrega en edificio ───────────────────────────────────────────────
@@ -1390,7 +1456,7 @@ public class PlayerMovementManager : NetworkBehaviour
         if (amount <= 0) return false;
         collectedCount.Value = 0;
         deliveredScore.Value += amount;
-        Debug.Log($"[PlayerMovementManager] {name} entregó {amount} -> puntuación {deliveredScore.Value}");
+        PlayDepositSoundClientRpc(transform.position, RpcTarget.Single(OwnerClientId, RpcTargetUse.Temp));
         return true;
     }
 
@@ -1408,13 +1474,19 @@ public class PlayerMovementManager : NetworkBehaviour
         powerUpQueue.Clear();
         activeVisualEffect.Value = 0;
         CancelInvoke(nameof(ClearVisualEffectServerSide));
-        Debug.Log($"[PlayerMovementManager] Puntaje e inventario reiniciados a 0 para {name}");
     }
 
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
     private void RequestDepositServerRpc()
     {
         DepositServerSide();
+    }
+
+    /// <summary>Reproduce el sonido de entrega SOLO en el cliente que depositó.</summary>
+    [Rpc(SendTo.SpecifiedInParams)]
+    private void PlayDepositSoundClientRpc(Vector3 depositPosition, RpcParams rpcParams = default)
+    {
+        InteractableCube.PlayCollectSoundAt(depositSound, depositPosition, depositSoundVolume);
     }
 
 #if UNITY_EDITOR

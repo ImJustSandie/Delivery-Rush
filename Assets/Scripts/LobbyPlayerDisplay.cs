@@ -66,6 +66,13 @@ public class LobbyPlayerDisplay : NetworkBehaviour
 
     public int PlayerSlotIndex => GetSlotIndex();
 
+    /// <summary>
+    /// True once the player was teleported to a real lobby slot in the Lobby scene.
+    /// Used by the scene transition to keep the screen covered until the lobby
+    /// layout (scale + slot positions) is settled instead of showing the acomodo.
+    /// </summary>
+    public bool IsLobbyPositionApplied => positionApplied;
+
     public int GetSlotIndex()
     {
         if (assignedSlotIndex.Value >= 0)
