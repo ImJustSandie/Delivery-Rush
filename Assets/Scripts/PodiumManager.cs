@@ -46,6 +46,20 @@ public class PodiumManager : MonoBehaviour
     [Tooltip("Textos opcionales para mostrar nombre/puntos en cada podio. Index 0=1º")]
     [SerializeField] private TMP_Text[] rankLabels;
 
+    [Header("Winner Announcement UI")]
+    [Tooltip("Panel o contenedor del letrero de ganador.")]
+    [SerializeField] private GameObject winnerBannerPanel;
+    [Tooltip("Texto TextMeshPro donde se mostrará 'GANADOR <nombre>'.")]
+    [SerializeField] private TMP_Text winnerText;
+    [Tooltip("Formato del texto. Usa {0} para el nombre del jugador.")]
+    [SerializeField] private string winnerTextFormat = "GANADOR\n{0}";
+    [Tooltip("Espera en segundos tras culminar las torres antes de mostrar el cartel.")]
+    [SerializeField] private float winnerRevealDelay = 0.8f;
+    [Tooltip("Si es true, realiza una animación de escala/pop al aparecer.")]
+    [SerializeField] private bool animateBannerPop = true;
+    [Tooltip("Sonido opcional de fanfarria o victoria al mostrar el cartel.")]
+    [SerializeField] private AudioClip winnerSound;
+
     [Header("Camera Follow")]
     [Tooltip("Si es true, la cámara de Podio sube acompañando al jugador con más puntos.")]
     [SerializeField] private bool followCamera = true;
@@ -64,6 +78,18 @@ public class PodiumManager : MonoBehaviour
     private Vector3 podiumCameraInitialPos;
     private float podiumCameraTargetY;
     private float podiumCameraBaseY;
+
+    private void Awake()
+    {
+        if (winnerBannerPanel != null)
+        {
+            winnerBannerPanel.SetActive(false);
+        }
+        else if (winnerText != null)
+        {
+            winnerText.gameObject.SetActive(false);
+        }
+    }
 
     private void Start()
     {
@@ -209,10 +235,23 @@ public class PodiumManager : MonoBehaviour
         }
 
         // Iniciar animación de salto + torres para cada jugador (local, determinista)
+        int activeTowerBuilders = 0;
         for (int i = 0; i < rankedPlayers.Count && i < podiumSlots.Length; i++)
         {
-            StartCoroutine(BuildTowerAndJumpRoutine(rankedPlayers[i], podiumSlots[i]));
+            activeTowerBuilders++;
+            StartCoroutine(BuildTowerAndJumpRoutine(rankedPlayers[i], podiumSlots[i], () => activeTowerBuilders--));
         }
+
+        // Esperar a que terminen de construirse todas las torres y se ejecuten las animaciones
+        float safetyTimer = maxBuildDuration + 5f;
+        while (activeTowerBuilders > 0 && safetyTimer > 0f)
+        {
+            safetyTimer -= Time.deltaTime;
+            yield return null;
+        }
+
+        // Revelar el cartel de ganador una vez culminadas las torres y animaciones
+        yield return RevealWinnerBannerRoutine();
     }
 
     private void ResolveSlots()
@@ -318,9 +357,13 @@ public class PodiumManager : MonoBehaviour
         // En Podio no usar PlayerCamera: se desactiva en SetupPodiumRoutine y se usa la Main Camera del podio
     }
 
-    private IEnumerator BuildTowerAndJumpRoutine(PlayerMovementManager player, Transform slot)
+    private IEnumerator BuildTowerAndJumpRoutine(PlayerMovementManager player, Transform slot, System.Action onComplete = null)
     {
-        if (player == null || slot == null) yield break;
+        if (player == null || slot == null)
+        {
+            onComplete?.Invoke();
+            yield break;
+        }
         // Total real = entregados + los que aún lleva encima (por si no alcanzó a entregar)
         int totalBlocks = player.Score + player.CollectedCount;
         if (totalBlocks > 0)
@@ -360,6 +403,135 @@ public class PodiumManager : MonoBehaviour
 
         // Determinar si es 1er lugar para activar la animación adecuada
         TriggerPostJumpAnimation(player);
+        onComplete?.Invoke();
+    }
+
+    private IEnumerator RevealWinnerBannerRoutine()
+    {
+        if (winnerBannerPanel == null && winnerText == null) yield break;
+
+        if (winnerRevealDelay > 0f)
+        {
+            yield return new WaitForSeconds(winnerRevealDelay);
+        }
+
+        int maxScore = (rankedPlayers != null && rankedPlayers.Count > 0)
+            ? rankedPlayers.Max(p => p != null ? p.Score + p.CollectedCount : 0)
+            : 0;
+
+        List<PlayerMovementManager> winners = new List<PlayerMovementManager>();
+        if (rankedPlayers != null && rankedPlayers.Count > 0)
+        {
+            if (maxScore > 0)
+            {
+                winners = rankedPlayers.Where(p => p != null && (p.Score + p.CollectedCount) == maxScore).ToList();
+            }
+            else
+            {
+                winners.Add(rankedPlayers[0]);
+            }
+        }
+
+        if (winners.Count == 0) yield break;
+
+        string winnerAnnouncement;
+        if (winners.Count == 1)
+        {
+            string winnerName = GetPlayerDisplayName(winners[0]);
+            string format = winnerTextFormat;
+            // Asegurar salto de línea si en el Inspector se conservó el texto previo en una sola línea
+            if (!format.Contains("\n") && format.Contains("GANADOR "))
+            {
+                format = format.Replace("GANADOR ", "GANADOR\n");
+            }
+            winnerAnnouncement = string.Format(format, winnerName);
+        }
+        else
+        {
+            string winnerNames = string.Join("\n", winners.Select(w => GetPlayerDisplayName(w)));
+            winnerAnnouncement = $"GANADORES\n{winnerNames}";
+        }
+
+        if (winnerText != null)
+        {
+            winnerText.text = winnerAnnouncement;
+
+            if (winners.Count == 1 && winners[0].TryGetComponent<LobbyPlayerDisplay>(out var display))
+            {
+                int slotIndex = GetPlayerSlotIndex(winners[0]);
+                winnerText.color = display.GetSlotColor(slotIndex);
+            }
+        }
+
+        if (winnerBannerPanel != null)
+        {
+            winnerBannerPanel.SetActive(true);
+
+            if (animateBannerPop)
+            {
+                StartCoroutine(AnimateBannerPopRoutine(winnerBannerPanel.transform));
+            }
+        }
+        else if (winnerText != null)
+        {
+            winnerText.gameObject.SetActive(true);
+
+            if (animateBannerPop)
+            {
+                StartCoroutine(AnimateBannerPopRoutine(winnerText.transform));
+            }
+        }
+
+        if (winnerSound != null)
+        {
+            AudioSource.PlayClipAtPoint(winnerSound, podiumCamera != null ? podiumCamera.transform.position : transform.position);
+        }
+
+        Debug.Log($"[PodiumManager] Letrero de ganador revelado: {winnerAnnouncement}");
+    }
+
+    private string GetPlayerDisplayName(PlayerMovementManager pm)
+    {
+        if (pm == null) return "Jugador";
+        if (pm.TryGetComponent<NetworkPlayerSkinSynchronizer>(out var skinSync) && !string.IsNullOrWhiteSpace(skinSync.PlayerName))
+        {
+            return skinSync.PlayerName;
+        }
+        int slotIndex = GetPlayerSlotIndex(pm);
+        return $"Jugador {slotIndex + 1}";
+    }
+
+    private IEnumerator AnimateBannerPopRoutine(Transform bannerTransform)
+    {
+        if (bannerTransform == null) yield break;
+        Vector3 originalScale = bannerTransform.localScale;
+        if (originalScale == Vector3.zero) originalScale = Vector3.one;
+
+        bannerTransform.localScale = Vector3.zero;
+        float duration = 0.5f;
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+
+            // Curva elástica / overshoot suave: crece a 1.15 y se estabiliza en 1.0
+            float scaleMultiplier;
+            if (t < 0.65f)
+            {
+                scaleMultiplier = Mathf.Lerp(0f, 1.15f, t / 0.65f);
+            }
+            else
+            {
+                scaleMultiplier = Mathf.Lerp(1.15f, 1f, (t - 0.65f) / 0.35f);
+            }
+
+            bannerTransform.localScale = originalScale * scaleMultiplier;
+            yield return null;
+        }
+
+        bannerTransform.localScale = originalScale;
     }
 
     private void TriggerPostJumpAnimation(PlayerMovementManager player)

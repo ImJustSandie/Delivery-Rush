@@ -173,3 +173,5 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PowerUpCube
   ShowTopMostFoldoutHeaderGroup: 1
   collectProtectionTime: 0.5
+  collectSound: {fileID: 8300000, guid: e4cd8d934beccd846a7259fed2d4ca1b, type: 3}
+  collectSoundVolume: 1

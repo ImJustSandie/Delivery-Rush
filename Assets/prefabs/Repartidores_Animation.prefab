@@ -164,7 +164,6 @@ MonoBehaviour:
   ignoreDragsOverUI: 1
   virtualMovePadObject: {fileID: 0}
   interactButtonObject: {fileID: 0}
-  debugLogs: 1
   initializeFromCurrentTransform: 1
 --- !u!1 &7650287870043268402
 GameObject:
@@ -532,7 +531,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 954140668
+  GlobalObjectIdHash: 3288990597
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -578,6 +577,8 @@ MonoBehaviour:
   powerUpEffectDuration: 5
   powerUpButtonEffect: 1
   powerUpButton: {fileID: 0}
+  depositSound: {fileID: 8300000, guid: fc43281d48d9f214ba13ac6b5229cd4f, type: 3}
+  depositSoundVolume: 1
   gravity: 0
   collectRadius: 1.5
   lobbySceneName: Lobby
@@ -782,11 +783,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e8177e7cbc68c264a978b26ba5e8c74d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PowerUpVisuals
+  ShowTopMostFoldoutHeaderGroup: 1
   boostModel: {fileID: 698388105266984164, guid: 6dd2643b71dd69043bfbf7a592172e5f, type: 3}
   slowMaterial: {fileID: 2100000, guid: b273d92cc001f8b4399b9cc9334dca6f, type: 2}
   matchPlayerTransform: 1
   boostYawOffset: 0
   boostYOffset: 0.4
+  slowPowerUpSound: {fileID: 8300000, guid: d141eeea93e55044eb8256c7b5e29171, type: 3}
+  slowPowerUpSoundVolume: 1
+  boostPowerUpSound: {fileID: 8300000, guid: b38c69f9b155be54394fe645b857ff20, type: 3}
+  boostPowerUpSoundVolume: 1
 --- !u!114 &-5347165962434130195
 MonoBehaviour:
   m_ObjectHideFlags: 0

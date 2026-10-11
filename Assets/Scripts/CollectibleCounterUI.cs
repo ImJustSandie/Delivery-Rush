@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UI;
 using TMPro;
 
 /// <summary>
@@ -6,6 +7,7 @@ using TMPro;
 /// Ubicar en un GameObject con TMP_Text en el Canvas de MainScene.
 /// Se auto-vincula al Player local (IsOwner) y escucha CollectedCountChanged + ScoreChanged.
 /// Si scoreText está asignado, muestra puntuación separada; si no, usa combinedFormat en counterText.
+/// Permite cambiar el color del panel de fondo (ej: PanelCantidad) cuando el jugador alcanza el tope máximo.
 /// </summary>
 public class CollectibleCounterUI : MonoBehaviour
 {
@@ -18,6 +20,16 @@ public class CollectibleCounterUI : MonoBehaviour
     [Tooltip("Referencia opcional al Player local. Si se deja vacío se detecta automáticamente (IsOwner).")]
     [SerializeField] private PlayerMovementManager targetPlayer;
 
+    [Header("Panel")]
+    [Tooltip("Imagen de fondo del panel de cantidad. Si se deja vacía se detecta automáticamente (padre de counterText o GameObject 'PanelCantidad').")]
+    [SerializeField] private Image panelImage;
+    [Tooltip("Si es true, captura el color actual del Image en Awake como color normal.")]
+    [SerializeField] private bool autoCapturePanelNormalColor = true;
+    [Tooltip("Color de fondo del panel en estado normal (utilizado si autoCapturePanelNormalColor es false).")]
+    [SerializeField] private Color panelNormalColor = new Color(1f, 1f, 1f, 0.64f);
+    [Tooltip("Color de fondo del panel cuando el jugador lleva la cantidad máxima de objetos encima.")]
+    [SerializeField] private Color panelFullColor = new Color(0.9f, 0.25f, 0.25f, 0.85f);
+
     [Header("Formato")]
     [Tooltip("Formato del contador. {0}=actual, {1}=máximo.")]
     [SerializeField] private string format = "{0} / {1}";
@@ -28,7 +40,7 @@ public class CollectibleCounterUI : MonoBehaviour
     [Tooltip("Formato combinado cuando no hay scoreText. {0}=puntos, {1}=actual, {2}=máximo.")]
     [SerializeField] private string combinedFormat = "Puntos: {0} | {1}/{2}";
 
-    [Header("Colores")]
+    [Header("Colores Texto")]
     [SerializeField] private Color normalColor = Color.white;
     [SerializeField] private Color fullColor = new Color(1f, 0.85f, 0.2f);
     [Tooltip("Si es true, también muestra '¡Inventario lleno!' o cambia estilo cuando está lleno.")]
@@ -38,11 +50,19 @@ public class CollectibleCounterUI : MonoBehaviour
     private bool isSubscribed;
     private int lastShownCount = int.MinValue;
     private int lastShownScore = int.MinValue;
+    private int lastShownMax = int.MinValue;
+    private Color initialPanelColor;
+    private bool hasCapturedPanelColor;
 
     private void Awake()
     {
         if (counterText == null)
             counterText = GetComponentInChildren<TMP_Text>(true);
+
+        if (panelImage == null)
+            FindPanelImage();
+
+        CaptureInitialPanelColor();
 
         if (counterText == null)
             Debug.LogWarning($"[CollectibleCounterUI] No se encontró TMP_Text en {name}. Asigna counterText en el Inspector.");
@@ -57,6 +77,12 @@ public class CollectibleCounterUI : MonoBehaviour
 
     private void OnEnable()
     {
+        if (panelImage == null)
+        {
+            FindPanelImage();
+            CaptureInitialPanelColor();
+        }
+
         // Validar de nuevo por si la escena se cargó con referencia inválida
         if (targetPlayer != null && !IsValidSceneReference(targetPlayer))
         {
@@ -77,7 +103,7 @@ public class CollectibleCounterUI : MonoBehaviour
         // Respaldo por polling: aunque se pierda un evento, la UI siempre refleja
         // el estado actual del jugador (llevo / entrego). Barato y a prueba de orden de ejecución.
         if (targetPlayer == null || !IsValidSceneReference(targetPlayer)) return;
-        if (targetPlayer.CollectedCount != lastShownCount || targetPlayer.Score != lastShownScore)
+        if (targetPlayer.CollectedCount != lastShownCount || targetPlayer.Score != lastShownScore || targetPlayer.MaxCollected != lastShownMax)
             RefreshUI();
     }
 
@@ -184,6 +210,48 @@ public class CollectibleCounterUI : MonoBehaviour
         RefreshUI();
     }
 
+    private void CaptureInitialPanelColor()
+    {
+        if (panelImage != null && !hasCapturedPanelColor)
+        {
+            initialPanelColor = panelImage.color;
+            hasCapturedPanelColor = true;
+        }
+    }
+
+    private void FindPanelImage()
+    {
+        if (panelImage != null) return;
+
+        // 1. Padre directo de counterText (caso MainScene: Cantidad dentro de PanelCantidad)
+        if (counterText != null && counterText.transform.parent != null)
+        {
+            panelImage = counterText.transform.parent.GetComponent<Image>();
+            if (panelImage != null) return;
+        }
+
+        // 2. Componente en este mismo GameObject o hijos
+        panelImage = GetComponent<Image>();
+        if (panelImage != null) return;
+
+        panelImage = GetComponentInChildren<Image>(true);
+        if (panelImage != null) return;
+
+        // 3. Buscar GameObject 'PanelCantidad' en la escena activa
+        GameObject found = GameObject.Find("PanelCantidad");
+        if (found != null)
+        {
+            panelImage = found.GetComponent<Image>();
+            if (panelImage != null) return;
+        }
+
+        // 4. Componente en ancestros de counterText
+        if (counterText != null)
+        {
+            panelImage = counterText.GetComponentInParent<Image>();
+        }
+    }
+
     private void RefreshUI()
     {
         if (targetPlayer == null) return;
@@ -194,6 +262,20 @@ public class CollectibleCounterUI : MonoBehaviour
         bool isFull = targetPlayer.IsInventoryFull;
         lastShownCount = current;
         lastShownScore = score;
+        lastShownMax = max;
+
+        // Actualizar color del panel de fondo si existe
+        if (panelImage == null)
+        {
+            FindPanelImage();
+            CaptureInitialPanelColor();
+        }
+
+        if (panelImage != null)
+        {
+            Color normal = (autoCapturePanelNormalColor && hasCapturedPanelColor) ? initialPanelColor : panelNormalColor;
+            panelImage.color = isFull ? panelFullColor : normal;
+        }
 
         // Texto de contador
         if (counterText != null)
@@ -237,6 +319,8 @@ public class CollectibleCounterUI : MonoBehaviour
         if (string.IsNullOrEmpty(combinedFormat)) combinedFormat = "Puntos: {0} | {1}/{2}";
         if (counterText == null)
             counterText = GetComponentInChildren<TMP_Text>(true);
+        if (panelImage == null)
+            FindPanelImage();
         // Actualizar preview en editor si hay player en escena
         if (Application.isPlaying) RefreshUI();
     }

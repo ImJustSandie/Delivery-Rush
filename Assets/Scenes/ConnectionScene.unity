@@ -2681,9 +2681,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameAudioManager
   sceneMusicTracks:
+  - sceneName: ConnectionScene
+    musicClip: {fileID: 8300000, guid: 10efe6c2e08328046b0e1ad828194fb1, type: 3}
+  - sceneName: Lobby
+    musicClip: {fileID: 8300000, guid: 5b69b137f7e3d4248bd4831c56b99925, type: 3}
   - sceneName: MainScene
-    musicClip: {fileID: 8300000, guid: 7781a81db74b3ef48b965a0f02b52c18, type: 3}
-  musicVolume: 0
+    musicClip: {fileID: 8300000, guid: b47e8a1f14b6f80438d9d740aec3f757, type: 3}
+  musicVolume: 0.3
   stopMusicWhenNoEntry: 0
   fadeDuration: 1
 --- !u!4 &1878132911

@@ -184,7 +184,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2126204566
+  GlobalObjectIdHash: 2964632791
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -217,7 +217,7 @@ MonoBehaviour:
   carrySmoothTime: 8
   maxPickupDistance: 3
   collectProtectionTime: 0.5
-  collectSound: {fileID: 8300000, guid: 829908cce5b36b248aed10990c72bcdf, type: 3}
+  collectSound: {fileID: 8300000, guid: 6f5149182607fff48b2f7c274b3580cd, type: 3}
   collectSoundVolume: 1
   modelVariants:
   - {fileID: 1341461029817243876}
