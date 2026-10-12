@@ -26,6 +26,8 @@ public class PlayerAnimationController : MonoBehaviour
     [Header("Configuración")]
     [Tooltip("Velocidad mínima para considerar que el personaje se está moviendo (si no se usa PlayerMovementManager).")]
     [SerializeField] private float speedThreshold = 0.1f;
+    [Tooltip("Si es true, desactiva el Root Motion del Animator por código. El personaje lo mueve el CharacterController, no la animación: con Root Motion la animación reescribe la Y cada frame y rompe la altura fija.")]
+    [SerializeField] private bool disableRootMotion = true;
 
     private Vector3 lastPosition;
     private int movingBoolHash;
@@ -75,7 +77,27 @@ public class PlayerAnimationController : MonoBehaviour
         // Verificar si los parámetros realmente existen en el Animator Controller
         CacheExistingParameters();
 
+        EnsureRootMotionOff();
+
         lastPosition = transform.position;
+    }
+
+    /// <summary>
+    /// Desactiva el Root Motion por código (el prefab lo trae activado y no se
+    /// puede modificar el prefab: ver AGENTS.md). Con Root Motion la animación
+    /// mueve el Transform cada frame después del Update y pisa la altura fija.
+    /// </summary>
+    private void EnsureRootMotionOff()
+    {
+        if (!disableRootMotion) return;
+        if (animator == null)
+        {
+            animator = GetComponentInChildren<Animator>();
+        }
+        if (animator != null)
+        {
+            animator.applyRootMotion = false;
+        }
     }
 
     /// <summary>
@@ -152,6 +174,7 @@ public class PlayerAnimationController : MonoBehaviour
     private void OnEnable()
     {
         UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
+        EnsureRootMotionOff();
         // Si al activarse no estamos en Podio (ej: volviendo al Lobby), resetear animación de resultado
         string currentScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
         if (!currentScene.Equals("Podium", System.StringComparison.OrdinalIgnoreCase))

@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -56,6 +57,21 @@ public class DiagonalSceneTransition : MonoBehaviour
     [Tooltip("Canvas sorting order used while transitioning (kept on top of all UI).")]
     [SerializeField] private int transitionSortingOrder = 100;
 
+    [Header("Transition Sound")]
+    [Tooltip("Sonido al cerrar (cubrir pantalla) en cada cambio de escena. Se escucha en 2D y sobrevive a la carga.")]
+    [SerializeField] private AudioClip closeSound;
+    [Tooltip("Sonido al abrir (revelar la nueva escena). Si esta vacio, no suena nada al abrir.")]
+    [SerializeField] private AudioClip openSound;
+    [Tooltip("Volumen del sonido de transicion (0 a 1).")]
+    [Range(0f, 1f)]
+    [SerializeField] private float transitionSoundVolume = 0.8f;
+
+    [Header("Network Pre-Cover")]
+    [Tooltip("Margen extra (segundos) que el servidor espera tras su propio cierre para dar tiempo a que los clientes terminen su animacion de cierre antes de cargar la escena.")]
+    [SerializeField] private float clientCoverMargin = 0.6f;
+    [Tooltip("Escenas de ORIGEN cuyas cargas de red entrantes no muestran transicion (corte directo). Vacia = todos los saltos muestran transicion. Ej: si el boton de Conectar ya cubre la pantalla, no hace falta omitir nada.")]
+    [SerializeField] private System.Collections.Generic.List<string> noCoverFromScenes = new System.Collections.Generic.List<string>();
+
     public bool IsTransitioning { get; private set; }
     public bool IsClosed { get; private set; }
 
@@ -68,7 +84,11 @@ public class DiagonalSceneTransition : MonoBehaviour
     private Canvas canvas;
     private Coroutine runningRoutine;
     private bool pendingOpenAfterLoad;
+    private bool skipCoverOnce;
     private int openHoldCount;
+    private AudioSource sfxSource;
+    private bool netcodeHooksAttached;
+    private const string PreCloseMessageName = "DiagTrans_PreClose";
 
     private void Awake()
     {
@@ -92,20 +112,24 @@ public class DiagonalSceneTransition : MonoBehaviour
 
         FixRootRect();
         AutoFindPanelsIfNeeded();
+        EnsureSfxSource();
     }
 
     private void OnEnable()
     {
         SceneManager.sceneLoaded += OnSceneLoaded;
+        TryAttachNetcodeHooks();
     }
 
     private void OnDisable()
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
+        DetachNetcodeHooks();
     }
 
     private void Start()
     {
+        TryAttachNetcodeHooks();
         if (playOpenOnStart)
         {
             SetClosedImmediate();
@@ -115,9 +139,149 @@ public class DiagonalSceneTransition : MonoBehaviour
 
     private void OnDestroy()
     {
+        DetachNetcodeHooks();
         if (Instance == this)
         {
             Instance = null;
+        }
+    }
+
+    /// <summary>
+    /// Engancha los eventos de carga de escena de Netcode (si hay NetworkManager).
+    /// Idempotente: el NetworkManager puede crearse despues que la transicion,
+    /// asi que se reintenta en Start, OnEnable y cada OnSceneLoaded.
+    /// </summary>
+    private void TryAttachNetcodeHooks()
+    {
+        if (netcodeHooksAttached) return;
+        if (Instance != null && Instance != this) return;
+        NetworkManager netManager = NetworkManager.Singleton;
+        if (netManager == null || netManager.SceneManager == null) return;
+        netManager.SceneManager.OnLoad += HandleNetcodeLoadStarted;
+        netManager.SceneManager.OnSynchronize += HandleNetcodeSynchronize;
+        netManager.CustomMessagingManager.RegisterNamedMessageHandler(PreCloseMessageName, HandlePreCloseMessage);
+        netcodeHooksAttached = true;
+    }
+
+    private void DetachNetcodeHooks()
+    {
+        if (!netcodeHooksAttached) return;
+        netcodeHooksAttached = false;
+        NetworkManager netManager = NetworkManager.Singleton;
+        if (netManager == null) return;
+        if (netManager.SceneManager != null)
+        {
+            netManager.SceneManager.OnLoad -= HandleNetcodeLoadStarted;
+            netManager.SceneManager.OnSynchronize -= HandleNetcodeSynchronize;
+        }
+        if (netManager.CustomMessagingManager != null)
+        {
+            netManager.CustomMessagingManager.UnregisterNamedMessageHandler(PreCloseMessageName);
+        }
+    }
+
+    /// <summary>
+    /// Pre-cubre la pantalla en los clientes cuando el servidor inicia una carga
+    /// de escena por red (Lobby -&gt; MainScene, etc.). Solo el servidor anima el
+    /// cierre via CloseAndLoadScene; los clientes reciben la carga sincronizada
+    /// sin aviso previo y antes solo veian el corte seco + apertura. Al cubrir
+    /// aqui, el OnSceneLoaded posterior revela con la apertura normal.
+    /// </summary>
+    private void HandleNetcodeLoadStarted(ulong clientId, string sceneName, LoadSceneMode loadSceneMode, AsyncOperation asyncOperation)
+    {
+        if (Instance != null && Instance != this) return;
+        if (loadSceneMode != LoadSceneMode.Single) return;
+        // El servidor ya se cubrio con su propia animacion de cierre.
+        if (pendingOpenAfterLoad) return;
+        if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer) return;
+        if (TrySkipCoverFromHere()) return;
+        if (IsClosed) return;
+        SetClosedImmediate();
+        PlayCloseSound();
+    }
+
+    /// <summary>
+    /// Pre-cubre cuando un cliente recien conectado sincroniza la escena actual
+    /// (ej. entrar con codigo y aparecer directo en el Lobby del host).
+    /// </summary>
+    private void HandleNetcodeSynchronize(ulong clientId)
+    {
+        if (Instance != null && Instance != this) return;
+        if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer) return;
+        if (NetworkManager.Singleton != null && clientId != NetworkManager.Singleton.LocalClientId) return;
+        if (TrySkipCoverFromHere()) return;
+        if (IsClosed) return;
+        SetClosedImmediate();
+        PlayCloseSound();
+    }
+
+    /// <summary>
+    /// Si la escena activa (origen del salto de red) esta en noCoverFromScenes,
+    /// desactiva la transicion para este salto: garantiza pantalla abierta, sin
+    /// sonido, y marca skipCoverOnce para que el OnSceneLoaded posterior tampoco
+    /// cubra. Retorna true cuando se omitio.
+    /// </summary>
+    private bool TrySkipCoverFromHere()
+    {
+        if (!IsSkipSourceScene(SceneManager.GetActiveScene().name)) return false;
+        skipCoverOnce = true;
+        SetOpenImmediate();
+        return true;
+    }
+
+    private bool IsSkipSourceScene(string sceneName)
+    {
+        if (string.IsNullOrEmpty(sceneName) || noCoverFromScenes == null) return false;
+        foreach (string entry in noCoverFromScenes)
+        {
+            if (!string.IsNullOrEmpty(entry)
+                && string.Equals(entry.Trim(), sceneName.Trim(), System.StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Aviso previo del servidor: un cambio de escena con animacion va a empezar.
+    /// Los clientes reproducen su propia animacion de cierre (wipe diagonal +
+    /// sonido) para que vean lo mismo que el host en vez del corte seco.
+    /// El servidor no necesita este mensaje (el maneja su propio cierre).
+    /// </summary>
+    private void HandlePreCloseMessage(ulong senderClientId, FastBufferReader messagePayload)
+    {
+        if (Instance != null && Instance != this) return;
+        if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer) return;
+        if (IsSkipSourceScene(SceneManager.GetActiveScene().name)) return;
+        if (IsClosed || IsTransitioning) return;
+        Close();
+    }
+
+    /// <summary>
+    /// El servidor avisa a todos los clientes de que empieza un cambio de escena
+    /// animado, para que cubran su pantalla en paralelo. Sin red o sin ser
+    /// servidor, no hace nada.
+    /// </summary>
+    private void BroadcastPreClose()
+    {
+        NetworkManager netManager = NetworkManager.Singleton;
+        if (netManager == null || !netManager.IsListening || !netManager.IsServer) return;
+        if (netManager.CustomMessagingManager == null) return;
+        FastBufferWriter writer = new FastBufferWriter(1, Allocator.Temp);
+        try
+        {
+            writer.WriteByteSafe(0);
+            netManager.CustomMessagingManager.SendNamedMessageToAll(
+                PreCloseMessageName, writer, NetworkDelivery.ReliableSequenced);
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("[DiagonalSceneTransition] No se pudo avisar el pre-cierre a clientes: " + e.Message);
+        }
+        finally
+        {
+            writer.Dispose();
         }
     }
 
@@ -167,10 +331,88 @@ public class DiagonalSceneTransition : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Crea el AudioSource 2D persistente para el sonido de transicion.
+    /// Al estar en el mismo GameObject con DontDestroyOnLoad, el sonido
+    /// no se corta cuando la escena se descarga (a diferencia de un
+    /// OneShot temporal creado en la escena anterior).
+    /// </summary>
+    private void EnsureSfxSource()
+    {
+        if (sfxSource == null)
+        {
+            sfxSource = GetComponent<AudioSource>();
+        }
+        if (sfxSource == null)
+        {
+            sfxSource = gameObject.AddComponent<AudioSource>();
+        }
+        sfxSource.loop = false;
+        sfxSource.playOnAwake = false;
+        sfxSource.spatialBlend = 0f;
+        sfxSource.volume = transitionSoundVolume;
+    }
+
+    private void PlayCloseSound()
+    {
+        PlayTransitionClip(closeSound);
+    }
+
+    private void PlayOpenSound()
+    {
+        PlayTransitionClip(openSound);
+    }
+
+    private void PlayTransitionClip(AudioClip clip)
+    {
+        if (clip == null)
+        {
+            return;
+        }
+        if (sfxSource == null)
+        {
+            EnsureSfxSource();
+        }
+        if (sfxSource == null)
+        {
+            return;
+        }
+        sfxSource.volume = Mathf.Clamp01(transitionSoundVolume);
+        sfxSource.PlayOneShot(clip);
+    }
+
+    /// <summary>
+    /// Cambia el sonido de cierre por codigo (util si el clip se carga en runtime).
+    /// </summary>
+    public void SetCloseSound(AudioClip clip)
+    {
+        closeSound = clip;
+    }
+
+    /// <summary>
+    /// Cambia el sonido de apertura por codigo.
+    /// </summary>
+    public void SetOpenSound(AudioClip clip)
+    {
+        openSound = clip;
+    }
+
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         if (mode != LoadSceneMode.Single) return;
         if (Instance != this) return;
+
+        // El NetworkManager puede haberse creado despues que la transicion.
+        TryAttachNetcodeHooks();
+
+        // Salto omitido (origen en noCoverFromScenes, ej. ClientConnectScene):
+        // corte directo sin cubrir ni animar.
+        if (skipCoverOnce)
+        {
+            skipCoverOnce = false;
+            SetOpenImmediate();
+            return;
+        }
 
         if (pendingOpenAfterLoad)
         {
@@ -307,6 +549,42 @@ public class DiagonalSceneTransition : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// Variante que nunca se ignora: resetea cualquier transicion en curso
+    /// (apertura a medias, hold retenido) y ejecuta el cambio con animacion.
+    /// Usarla en redirecciones que deben funcionar siempre (ej. entrar/salir
+    /// del tutorial), donde un "ignorado por transicion en curso" deja al
+    /// usuario atascado sin respuesta.
+    /// </summary>
+    public static void TransitionToForce(string sceneName)
+    {
+        if (string.IsNullOrEmpty(sceneName))
+        {
+            Debug.LogWarning("[DiagonalSceneTransition] Empty scene name, ignoring forced request.");
+            return;
+        }
+        if (Instance == null)
+        {
+            Debug.LogWarning("[DiagonalSceneTransition] No instance in scene, loading directly: " + sceneName);
+            LoadDirect(sceneName);
+            return;
+        }
+        Instance.ForceLoadScene(sceneName);
+    }
+
+    /// <summary>
+    /// Resetea el estado (cancela animacion en curso y holds) y arranca
+    /// CloseAndLoadScene garantizado.
+    /// </summary>
+    public void ForceLoadScene(string sceneName)
+    {
+        if (string.IsNullOrEmpty(sceneName)) return;
+        openHoldCount = 0;
+        pendingOpenAfterLoad = false;
+        SetOpenImmediate();
+        CloseAndLoadScene(sceneName);
+    }
+
     private static void LoadDirect(string sceneName)
     {
         if (NetworkManager.Singleton != null
@@ -326,6 +604,10 @@ public class DiagonalSceneTransition : MonoBehaviour
         IsTransitioning = true;
         pendingOpenAfterLoad = true;
         SetCanvasVisible(true);
+        // Avisar primero para que los clientes animen su cierre en paralelo
+        // al nuestro (ver HandlePreCloseMessage).
+        BroadcastPreClose();
+        PlayCloseSound();
 
         if (!IsClosed)
         {
@@ -349,6 +631,15 @@ public class DiagonalSceneTransition : MonoBehaviour
         if (closedHoldDelay > 0f)
         {
             yield return new WaitForSecondsRealtime(closedHoldDelay);
+        }
+
+        // En red y como servidor, dar margen a que los clientes terminen su
+        // animacion de cierre (avisada por BroadcastPreClose) antes de cargar,
+        // para que no vean el corte de escena a mitad del wipe.
+        NetworkManager netManager = NetworkManager.Singleton;
+        if (clientCoverMargin > 0f && netManager != null && netManager.IsListening && netManager.IsServer)
+        {
+            yield return new WaitForSecondsRealtime(clientCoverMargin);
         }
 
         // Keep IsTransitioning true across the load; OnSceneLoaded -> Open() resets it.
@@ -383,6 +674,7 @@ public class DiagonalSceneTransition : MonoBehaviour
         }
         openHoldCount = 0;
 
+        PlayOpenSound();
         Vector2 startA = panelA != null ? panelA.anchoredPosition : closedPositionA;
         Vector2 startB = panelB != null ? panelB.anchoredPosition : closedPositionB;
         Vector2 endA = closedPositionA + openOffsetA;
@@ -403,6 +695,7 @@ public class DiagonalSceneTransition : MonoBehaviour
     {
         IsTransitioning = true;
         SetCanvasVisible(true);
+        PlayCloseSound();
 
         Vector2 startA = panelA != null ? panelA.anchoredPosition : closedPositionA + openOffsetA;
         Vector2 startB = panelB != null ? panelB.anchoredPosition : closedPositionB + openOffsetB;
@@ -477,6 +770,16 @@ public class DiagonalSceneTransition : MonoBehaviour
         }
         return 0f;
     }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        transitionSoundVolume = Mathf.Clamp01(transitionSoundVolume);
+        if (openDuration < 0f) openDuration = 0f;
+        if (closeDuration < 0f) closeDuration = 0f;
+        if (clientCoverMargin < 0f) clientCoverMargin = 0f;
+    }
+#endif
 }
 
 /// <summary>

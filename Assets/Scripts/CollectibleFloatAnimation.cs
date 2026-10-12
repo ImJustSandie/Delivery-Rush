@@ -1,5 +1,4 @@
 using UnityEngine;
-using Unity.Netcode;
 
 /// <summary>
 /// Animación procedural de flotación + giro para recolectables y power-ups.
@@ -117,28 +116,16 @@ public class CollectibleFloatAnimation : MonoBehaviour
         if (GetComponentInParent<PlayerMovementManager>() != null && transform.parent != null)
             return;
 
-        // Solo el servidor anima la posición autoritativa; los clientes la reciben
-        // por replicación del NetworkObject (SynchronizeTransform). En offline/tutorial
-        // sin red, se anima siempre en local.
-        if (IsReplicatedClient())
-            return;
-
+        // Animacion puramente visual y local en cada peer: el servidor y cada
+        // cliente flotan/giran con sus propios parametros sorteados. Antes solo
+        // animaba el servidor esperando que NetworkObject.SynchronizeTransform
+        // replicara el vaiven, pero esa replicacion filtra los movimientos
+        // pequenos y en el cliente los objetos se veian estaticos.
         elapsed += Time.deltaTime;
 
         float yOffset = Mathf.Sin(elapsed * floatFrequency * Mathf.PI * 2f + phase) * floatAmplitude;
         transform.position = basePosition + Vector3.up * yOffset;
         transform.Rotate(Vector3.up, spinSpeed * Time.deltaTime, Space.Self);
-    }
-
-    private bool IsReplicatedClient()
-    {
-        if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
-            return false;
-        if (!TryGetComponent(out NetworkObject netObj))
-            return false;
-        if (!netObj.IsSpawned)
-            return false;
-        return !NetworkManager.Singleton.IsServer;
     }
 
 #if UNITY_EDITOR

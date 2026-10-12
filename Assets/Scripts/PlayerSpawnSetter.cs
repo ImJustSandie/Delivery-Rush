@@ -30,6 +30,12 @@ public class PlayerSpawnSetter : NetworkBehaviour
     [Tooltip("Máscara de capas considerada como suelo para el Raycast de alineación.")]
     [SerializeField] private LayerMask groundLayerMask = ~0;
 
+    [Header("Street Layer")]
+    [Tooltip("Nombre de la capa de la calle. El spawn aleatorio solo acepta puntos cuyo suelo sea de esta capa.")]
+    [SerializeField] private string streetLayerName = "Street";
+    [Tooltip("Si es true, el spawn aleatorio descarta candidatos que no esten sobre la capa Street (evita techos, edificios y obstaculos).")]
+    [SerializeField] private bool requireStreetGround = true;
+
     [Header("Random Spawn")]
     [Tooltip("Si es true, el spawn es aleatorio en vez de determinista por slot.")]
     [SerializeField] private bool randomizeSpawn = true;
@@ -41,6 +47,10 @@ public class PlayerSpawnSetter : NetworkBehaviour
     [SerializeField] private Vector3 obstructionCheckHalfExtents = new Vector3(0.5f, 1f, 0.5f);
     [Tooltip("Número máximo de posiciones aleatorias a probar antes de rendirse (evita spawnear dentro de edificios/obstáculos).")]
     [SerializeField] private int maxSpawnAttempts = 20;
+
+    [Header("Tutorial Fixed Spawn")]
+    [Tooltip("Si es true, en el tutorial offline el spawn es siempre el primer punto fijo en vez de aleatorio. No afecta a la partida en red.")]
+    [SerializeField] private bool fixedSpawnInTutorial = true;
 
     private void Awake()
     {
@@ -263,7 +273,11 @@ public class PlayerSpawnSetter : NetworkBehaviour
         Quaternion spawnRot = Quaternion.identity;
         bool pointFound = false;
 
-        if (randomizeSpawn && useSpawnerVolumes)
+        // Tutorial: punto fijo determinista (primer hijo de SpawnPoints).
+        if (fixedSpawnInTutorial && TryGetFixedTutorialPoint(out spawnPos, out spawnRot))
+            pointFound = true;
+
+        if (!pointFound && randomizeSpawn && useSpawnerVolumes)
         {
             if (TryGetRandomSpawnerPosition(out spawnPos, out spawnRot))
                 pointFound = true;
@@ -340,6 +354,7 @@ public class PlayerSpawnSetter : NetworkBehaviour
     /// Devuelve true si la posición cae dentro de un Collider sólido (no Trigger)
     /// de <see cref="obstacleLayers"/>. Misma lógica que los objetos
     /// (<see cref="CollectibleSpawnManager.IsPositionBlocked"/>), con caja de tamaño de jugador.
+    /// Los colliders de la capa Street nunca cuentan como obstáculo (es suelo válido).
     /// </summary>
     public bool IsPositionBlocked(Vector3 position)
     {
@@ -349,7 +364,64 @@ public class PlayerSpawnSetter : NetworkBehaviour
             Quaternion.identity,
             obstacleLayers,
             QueryTriggerInteraction.Ignore);
-        return hits != null && hits.Length > 0;
+        if (hits == null || hits.Length == 0) return false;
+        int streetMask = ResolveStreetMask();
+        foreach (Collider hit in hits)
+        {
+            if (hit == null) continue;
+            if (streetMask != 0 && IsInMask(hit.gameObject.layer, streetMask)) continue;
+            return true;
+        }
+        return false;
+    }
+
+    private int ResolveStreetMask()
+    {
+        if (string.IsNullOrEmpty(streetLayerName)) return 0;
+        // 0 = la capa no existe (aun no creada en este build): fallback al comportamiento anterior.
+        return LayerMask.GetMask(streetLayerName);
+    }
+
+    private static bool IsInMask(int layer, int mask)
+    {
+        return ((1 << layer) & mask) != 0;
+    }
+
+    private bool IsStreetHit(RaycastHit hit, int streetMask)
+    {
+        if (hit.collider == null) return false;
+        return streetMask != 0 && IsInMask(hit.collider.gameObject.layer, streetMask);
+    }
+
+    /// <summary>
+    /// Punto fijo del tutorial: primer hijo del contenedor SpawnPoints
+    /// (SpawnPoint_0), o el objeto SpawnPoint_0 / SpawnPoint por nombre.
+    /// Solo se usa en el tutorial offline; la partida en red sigue aleatoria.
+    /// </summary>
+    private bool TryGetFixedTutorialPoint(out Vector3 position, out Quaternion rotation)
+    {
+        position = Vector3.zero;
+        rotation = Quaternion.identity;
+        GameObject container = GameObject.Find(spawnPointsContainerName);
+        if (container != null && container.transform.childCount > 0)
+        {
+            Transform first = container.transform.GetChild(0);
+            if (first != null)
+            {
+                position = first.position;
+                rotation = first.rotation;
+                return true;
+            }
+        }
+        GameObject named = GameObject.Find($"{spawnPointObjectName}_0");
+        if (named == null) named = GameObject.Find(spawnPointObjectName);
+        if (named != null)
+        {
+            position = named.transform.position;
+            rotation = named.transform.rotation;
+            return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -423,9 +495,21 @@ public class PlayerSpawnSetter : NetworkBehaviour
     {
         // Empezar Raycast 5 metros por encima del punto original para detectar el suelo.
         // Se ignoran Triggers para no apoyar al jugador sobre hitboxes/volúmenes.
+        // Prioridad a la capa Street: si existe y golpea, ese es el suelo válido.
         Vector3 rayStart = originalPos + Vector3.up * 5.0f;
+        int streetMask = ResolveStreetMask();
+        if (requireStreetGround && streetMask != 0)
+        {
+            if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit streetHit, 50.0f, streetMask, QueryTriggerInteraction.Ignore))
+            {
+                return streetHit.point + Vector3.up * spawnHeightOffset;
+            }
+        }
         if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, 50.0f, groundLayerMask, QueryTriggerInteraction.Ignore))
         {
+            // Si se exige calle pero el suelo golpeado no es Street, igual se devuelve
+            // (puntos fijos deterministas); el filtro real anti-obstáculos se aplica
+            // en el spawn aleatorio vía TryProbeGround.
             return hit.point + Vector3.up * spawnHeightOffset;
         }
         return originalPos + Vector3.up * spawnHeightOffset;
@@ -436,11 +520,22 @@ public class PlayerSpawnSetter : NetworkBehaviour
     /// desde bien alto y devuelve el punto de suelo + offset. Retorna false si no hay
     /// suelo debajo (el candidato se descarta en vez de dejar al jugador enterrado).
     /// Ignora Triggers para no dejar al jugador flotando sobre hitboxes.
+    /// Con requireStreetGround, solo acepta suelo de la capa Street.
     /// </summary>
     private bool TryProbeGround(Vector3 sampledPos, out Vector3 groundedPos)
     {
         groundedPos = Vector3.zero;
         Vector3 rayStart = new Vector3(sampledPos.x, sampledPos.y + groundProbeHeight, sampledPos.z);
+        int streetMask = ResolveStreetMask();
+        if (requireStreetGround && streetMask != 0)
+        {
+            if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit streetHit, groundProbeHeight + 100f, streetMask, QueryTriggerInteraction.Ignore))
+            {
+                groundedPos = streetHit.point + Vector3.up * spawnHeightOffset;
+                return true;
+            }
+            return false;
+        }
         if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, groundProbeHeight + 100f, groundLayerMask, QueryTriggerInteraction.Ignore))
         {
             groundedPos = hit.point + Vector3.up * spawnHeightOffset;

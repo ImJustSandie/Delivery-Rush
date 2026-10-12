@@ -16,9 +16,11 @@ public class SceneMusicEntry
 }
 
 /// <summary>
-/// Gestor local de musica de fondo (una instancia por cliente, sin red).
-/// Reproduce un tema en loop segun la escena activa: añade entradas en
-/// sceneMusicTracks (ej. Scene Name = MainScene + tu AudioClip) y suena solo.
+/// Gestor local de musica de fondo persistente (una instancia por cliente, sin red).
+/// La musica suena de forma continua entre escenas gracias a DontDestroyOnLoad:
+/// solo cambia al llegar a una escena con tema distinto asignado en
+/// sceneMusicTracks (ej. MainScene). Las escenas sin entrada mantienen el
+/// tema anterior sin cortes.
 /// El AudioSource se crea por codigo en modo 2D (spatialBlend 0), asi la
 /// musica se escucha igual sin importar donde este el AudioListener del
 /// jugador local (ver PlayerLocalAudioListener).
@@ -36,13 +38,18 @@ public class GameAudioManager : MonoBehaviour
     [Tooltip("Volumen de la musica (0 a 1). Se guarda entre sesiones.")]
     [Range(0f, 1f)]
     [SerializeField] private float musicVolume = 0.7f;
-    [Tooltip("Si es true, al entrar en una escena sin tema asignado la musica se detiene. Si es false, sigue sonando el tema anterior.")]
+    [Tooltip("Tema por defecto si al arrancar no hay musica sonando y la escena activa no tiene tema asignado. Si es null, se queda en silencio hasta llegar a una escena con tema.")]
+    [SerializeField] private AudioClip defaultMusicClip;
+    [Tooltip("Si es true, al entrar en una escena sin tema asignado la musica se detiene. Si es false (recomendado), sigue sonando el tema anterior sin cortes.")]
     [SerializeField] private bool stopMusicWhenNoEntry = false;
     [Tooltip("Fundido de salida/entrada al cambiar de tema (segundos). 0 = corte directo.")]
     [SerializeField] private float fadeDuration = 1f;
 
     private AudioSource musicSource;
     private Coroutine fadeRoutine;
+    private Coroutine ensurePlayingRoutine;
+    private AudioClip desiredTrack;
+    private AudioClip fadingToClip;
     private const string VolumePrefsKey = "GameAudioManager.MusicVolume";
 
     public float MusicVolume => musicSource != null ? musicSource.volume : musicVolume;
@@ -64,6 +71,11 @@ public class GameAudioManager : MonoBehaviour
 
     private void OnEnable()
     {
+        // El duplicado destruido en Awake no debe suscribirse.
+        if (Instance != null && Instance != this)
+        {
+            return;
+        }
         SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
@@ -72,13 +84,36 @@ public class GameAudioManager : MonoBehaviour
         SceneManager.sceneLoaded -= OnSceneLoaded;
     }
 
+    private void OnDestroy()
+    {
+        if (Instance == this)
+        {
+            Instance = null;
+        }
+    }
+
     private void Start()
     {
+        // Intento inicial: si la escena actual tiene tema, ese es el deseado.
+        // Si no tiene y no hay nada sonando, se usa el tema por defecto (si hay).
         PlayMusicForScene(SceneManager.GetActiveScene().name);
+        if (ensurePlayingRoutine == null)
+        {
+            ensurePlayingRoutine = StartCoroutine(EnsurePlayingRoutine());
+        }
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        if (Instance != null && Instance != this)
+        {
+            return;
+        }
+        // Las cargas aditivas (UI,Managers) no deben cortar la musica.
+        if (mode != LoadSceneMode.Single)
+        {
+            return;
+        }
         PlayMusicForScene(scene.name);
     }
 
@@ -103,6 +138,9 @@ public class GameAudioManager : MonoBehaviour
 
     /// <summary>
     /// Reproduce el tema asignado a la escena indicada, si lo hay.
+    /// Si la escena no tiene tema asignado, la musica actual sigue sonando
+    /// sin cortes (persistente entre escenas), salvo que
+    /// stopMusicWhenNoEntry sea true.
     /// </summary>
     public void PlayMusicForScene(string sceneName)
     {
@@ -112,7 +150,17 @@ public class GameAudioManager : MonoBehaviour
             if (stopMusicWhenNoEntry)
             {
                 StopMusic();
+                return;
             }
+            // Sin entrada: mantener lo que suena (comportamiento pedido).
+            // Solo si no hay nada sonando, intentar el tema por defecto
+            // para no arrancar en silencio (caso escena de conexion/inicial).
+            if ((musicSource == null || !musicSource.isPlaying) && desiredTrack == null && defaultMusicClip != null)
+            {
+                PlayMusic(defaultMusicClip);
+            }
+            // Si ya habia un tema deseado (ej. ConnectionScene) pero aun no
+            // suena por bloqueo de autoplay, no lo borres: el watchdog lo reintentara.
             return;
         }
         PlayMusic(clip);
@@ -127,7 +175,13 @@ public class GameAudioManager : MonoBehaviour
         {
             return;
         }
+        desiredTrack = clip;
         if (musicSource.clip == clip && musicSource.isPlaying)
+        {
+            return;
+        }
+        // Si ya hay un fundido en curso hacia este mismo clip, no reiniciarlo.
+        if (fadeRoutine != null && fadingToClip == clip)
         {
             return;
         }
@@ -135,9 +189,11 @@ public class GameAudioManager : MonoBehaviour
         {
             StopCoroutine(fadeRoutine);
             fadeRoutine = null;
+            fadingToClip = null;
         }
         if (fadeDuration > 0f && musicSource.isPlaying)
         {
+            fadingToClip = clip;
             fadeRoutine = StartCoroutine(FadeToTrackRoutine(clip));
         }
         else
@@ -153,6 +209,8 @@ public class GameAudioManager : MonoBehaviour
     /// </summary>
     public void StopMusic()
     {
+        desiredTrack = null;
+        fadingToClip = null;
         if (fadeRoutine != null)
         {
             StopCoroutine(fadeRoutine);
@@ -196,10 +254,14 @@ public class GameAudioManager : MonoBehaviour
 
     private AudioClip FindTrackForScene(string sceneName)
     {
+        if (string.IsNullOrEmpty(sceneName))
+        {
+            return null;
+        }
         foreach (SceneMusicEntry entry in sceneMusicTracks)
         {
             if (entry != null && entry.musicClip != null
-                && string.Equals(entry.sceneName, sceneName))
+                && string.Equals(entry.sceneName.Trim(), sceneName.Trim(), System.StringComparison.Ordinal))
             {
                 return entry.musicClip;
             }
@@ -207,16 +269,63 @@ public class GameAudioManager : MonoBehaviour
         return null;
     }
 
+    /// <summary>
+    /// Vigia que garantiza musica continua:
+    /// - Si hay un tema deseado y no suena (ej. autoplay bloqueado en WebGL
+    ///   en la escena de conexion antes del primer clic, o fundido
+    ///   interrumpido con volumen en 0), lo reintenta sin fundido.
+    /// Asi la cancion suena desde el arranque y persiste entre escenas;
+    /// solo cambia al llegar a una escena con tema distinto asignado.
+    /// </summary>
+    private IEnumerator EnsurePlayingRoutine()
+    {
+        WaitForSecondsRealtime wait = new WaitForSecondsRealtime(0.5f);
+        while (true)
+        {
+            if (desiredTrack != null && musicSource != null && musicVolume > 0f)
+            {
+                bool shouldBePlaying = fadeRoutine == null
+                    && (!musicSource.isPlaying || musicSource.clip != desiredTrack);
+                if (shouldBePlaying)
+                {
+                    musicSource.clip = desiredTrack;
+                    musicSource.loop = true;
+                    musicSource.spatialBlend = 0f;
+                    musicSource.volume = musicVolume;
+                    musicSource.Play();
+                }
+                else if (musicSource.isPlaying && musicSource.volume <= 0.001f && fadeRoutine == null)
+                {
+                    // Fundido interrumpido dejo el volumen en 0: restaurarlo.
+                    musicSource.volume = musicVolume;
+                }
+            }
+            yield return wait;
+        }
+    }
+
     private IEnumerator FadeToTrackRoutine(AudioClip nextClip)
     {
         float duration = Mathf.Max(0.01f, fadeDuration);
-        float startVolume = musicSource.volume;
+        float startVolume = musicSource != null ? musicSource.volume : musicVolume;
         float t = 0f;
         while (t < 1f)
         {
+            if (musicSource == null)
+            {
+                fadeRoutine = null;
+                fadingToClip = null;
+                yield break;
+            }
             t += Time.unscaledDeltaTime / duration;
             musicSource.volume = Mathf.Lerp(startVolume, 0f, t);
             yield return null;
+        }
+        if (musicSource == null)
+        {
+            fadeRoutine = null;
+            fadingToClip = null;
+            yield break;
         }
         musicSource.Stop();
         musicSource.clip = nextClip;
@@ -230,6 +339,7 @@ public class GameAudioManager : MonoBehaviour
         }
         musicSource.volume = musicVolume;
         fadeRoutine = null;
+        fadingToClip = null;
     }
 
 #if UNITY_EDITOR

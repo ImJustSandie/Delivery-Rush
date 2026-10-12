@@ -27,12 +27,18 @@ public class PodiumManager : MonoBehaviour
     [SerializeField] private GameObject towerBlockPrefab;
     [Tooltip("Altura de cada bloque.")]
     [SerializeField] private float blockHeight = 0.5f;
-    [Tooltip("Tamaño del bloque (x,z).")]
+    [Tooltip("Tamaño del bloque (x,z). Solo aplica al towerBlockPrefab clasico, no a los modelos aleatorios de items.")]
     [SerializeField] private Vector3 blockSize = new Vector3(0.9f, 0.5f, 0.9f);
     [Tooltip("Intervalo entre bloques.")]
     [SerializeField] private float blockSpawnInterval = 0.22f;
     [Tooltip("Bloques por segundo en modo rápido (si puntuación es alta).")]
     [SerializeField] private float maxBuildDuration = 8f;
+
+    [Header("Bloques aleatorios (items)")]
+    [Tooltip("Si es true, cada bloque de la torre es un modelo aleatorio de la lista disponible del prefab ya asignado (misma logica que InteractableCube: un modelo al azar).")]
+    [SerializeField] private bool randomizeTowerBlocks = true;
+    [Tooltip("Variantes entre las que sortear (hijos del prefab). Si se deja vacía, se detectan solos los hijos directos desactivados del bloque instanciado, igual que en la escena de juego.")]
+    [SerializeField] private List<GameObject> towerModelVariants = new List<GameObject>();
 
     [Header("Salto")]
     [Tooltip("Altura del salto.")]
@@ -374,17 +380,15 @@ public class PodiumManager : MonoBehaviour
                 interval = maxBuildDuration / totalBlocks;
 
             Vector3 basePos = slot.position;
-            GameObject blockPrefab = ResolveBlockPrefab();
+            int playerSeed = GetPlayerSlotIndex(player);
 
             for (int i = 0; i < totalBlocks; i++)
             {
                 Vector3 blockPos = basePos + Vector3.up * (i * blockHeight);
 
-                // Spawnear bloque local sin físicas: solo visual apilado, no desplazable
-                GameObject block = Instantiate(blockPrefab, blockPos, Quaternion.identity);
+                // Bloque aleatorio de la lista disponible (items) o bloque clasico.
+                GameObject block = CreateTowerBlock(blockPos, playerSeed, i);
                 block.name = $"Tower_{player.OwnerClientId}_{i}";
-                block.transform.localScale = blockSize;
-                MakeBlockStatic(block);
                 spawnedBlocks.Add(block);
 
                 // Animar exactamente 1 salto por bloque hasta la nueva altura
@@ -563,6 +567,75 @@ public class PodiumManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Crea un bloque de torre en la posicion dada. Si randomizeTowerBlocks esta
+    /// activo y hay prefab asignado, instancia ese mismo prefab y sortea un modelo
+    /// de la lista disponible (misma logica que InteractableCube: un modelo al azar,
+    /// con semilla por jugador+bucle para que todos los clientes vean la misma
+    /// torre). Si no, usa el bloque clasico escalado.
+    /// </summary>
+    private GameObject CreateTowerBlock(Vector3 blockPos, int playerSeed, int blockIndex)
+    {
+        if (randomizeTowerBlocks && towerBlockPrefab != null)
+        {
+            // Spawnear item local sin físicas: solo visual apilado, no desplazable ni recolectable.
+            GameObject block = Instantiate(towerBlockPrefab, blockPos, Quaternion.identity);
+            MakeBlockStatic(block);
+            ApplyRandomItemVariant(block, playerSeed, blockIndex);
+            return block;
+        }
+        GameObject classicPrefab = ResolveBlockPrefab();
+        GameObject classic = Instantiate(classicPrefab, blockPos, Quaternion.identity);
+        classic.transform.localScale = blockSize;
+        MakeBlockStatic(classic);
+        return classic;
+    }
+
+    /// <summary>
+    /// Sortea un modelo de la lista disponible (towerModelVariants si esta asignada;
+    /// si no, los hijos directos desactivados del bloque, igual que
+    /// InteractableCube en la escena de juego): apaga los candidatos y prende uno
+    /// al azar. Semilla determinista por jugador y bloque para que cada cliente
+    /// arme la misma torre. Sin variantes, deja el bloque intacto.
+    /// </summary>
+    private void ApplyRandomItemVariant(GameObject block, int playerSeed, int blockIndex)
+    {
+        if (block == null) return;
+        List<GameObject> variants = ResolveInstanceVariants(block);
+        if (variants.Count == 0) return;
+        foreach (GameObject v in variants)
+        {
+            if (v != null) v.SetActive(false);
+        }
+        int seed = unchecked(playerSeed * 7919 + blockIndex * 31 + variants.Count);
+        int pick = new System.Random(seed).Next(variants.Count);
+        if (variants[pick] != null) variants[pick].SetActive(true);
+    }
+
+    /// <summary>
+    /// Resuelve los candidatos sobre el bloque instanciado. Si towerModelVariants
+    /// esta asignada, busca cada entrada por nombre entre los hijos (son los mismos
+    /// modelos del prefab); si no, detecta los hijos directos desactivados.
+    /// </summary>
+    private List<GameObject> ResolveInstanceVariants(GameObject block)
+    {
+        List<GameObject> variants = new List<GameObject>();
+        foreach (GameObject entry in towerModelVariants)
+        {
+            if (entry == null) continue;
+            Transform match = block.transform.Find(entry.name);
+            if (match != null && !variants.Contains(match.gameObject))
+                variants.Add(match.gameObject);
+        }
+        if (variants.Count > 0) return variants;
+        foreach (Transform child in block.transform)
+        {
+            if (child != null && !child.gameObject.activeSelf)
+                variants.Add(child.gameObject);
+        }
+        return variants;
+    }
+
     private GameObject ResolveBlockPrefab()
     {
         if (towerBlockPrefab != null) return towerBlockPrefab;
@@ -588,6 +661,11 @@ public class PodiumManager : MonoBehaviour
         // Si el prefab trae InteractableCube/Collectible, quitarlo para que no sea recolectable en podio
         var interactable = block.GetComponent<InteractableCube>();
         if (interactable != null) Destroy(interactable);
+        var powerUp = block.GetComponent<PowerUpCube>();
+        if (powerUp != null) Destroy(powerUp);
+        // Quitar la flotacion+giro que InteractableCube añade en Awake: la torre es estatica
+        var floatAnim = block.GetComponent<CollectibleFloatAnimation>();
+        if (floatAnim != null) Destroy(floatAnim);
         var netObj = block.GetComponent<Unity.Netcode.NetworkObject>();
         if (netObj != null) Destroy(netObj);
         // Asegurar que no sea trigger y no tenga físicas

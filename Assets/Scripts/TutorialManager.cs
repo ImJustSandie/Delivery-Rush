@@ -117,6 +117,7 @@ public class TutorialManager : MonoBehaviour
     [SerializeField] private string timerObjectName = "Timer";
 
     private GameObject autoExitCanvas;
+    private GameObject infoCanvas;
     private GameObject offlinePlayer;
     private bool offlinePlayerInstantiated;
     private Coroutine enterRoutine;
@@ -183,7 +184,9 @@ public class TutorialManager : MonoBehaviour
             NetworkGameManager.Instance.ResetGame(true);
 
         Debug.Log($"[TutorialManager] Cargando escena de tutorial offline: {sceneName}");
-        DiagonalSceneTransition.TransitionTo(sceneName);
+        // Forzada: la entrada al tutorial debe funcionar siempre, incluso si se
+        // pulsa el boton a mitad de otra animacion de transicion.
+        DiagonalSceneTransition.TransitionToForce(sceneName);
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -202,6 +205,7 @@ public class TutorialManager : MonoBehaviour
             // Al volver al menú, limpiar restos del jugador offline y del botón automático.
             CleanupOfflinePlayer();
             CleanupAutoExitButton();
+            CleanupInfoPanels();
         }
     }
 
@@ -217,6 +221,10 @@ public class TutorialManager : MonoBehaviour
         SetupTutorialDummies();
         HideTimerUI();
         WireOrCreateExitButton();
+        // Un frame más: el jugador instanciado fija su posición de spawn en su
+        // Start, y los paneles se colocan frente a esa posición final.
+        yield return null;
+        CreateInfoPanels();
         enterRoutine = null;
         Debug.Log("[TutorialManager] Tutorial offline iniciado: jugador local, objetos por instanciación directa, sin timer, sin red.");
     }
@@ -466,6 +474,123 @@ public class TutorialManager : MonoBehaviour
         }
     }
 
+    // ── Paneles informativos (solo tutorial) ──────────────────────────────
+
+    /// <summary>
+    /// Crea frente al spawn (hacia donde mira el jugador) 3 paneles
+    /// informativos en un Canvas WorldSpace: cómo moverte, objetivo y cómo
+    /// ganar. Sin colliders: puramente visual, no interfiere con el juego.
+    /// </summary>
+    private void CreateInfoPanels()
+    {
+        CleanupInfoPanels();
+        // Si la escena ya trae los paneles (TutorialInfoCanvas creado en el
+        // editor), no duplicar: lo de escena manda.
+        if (GameObject.Find("TutorialInfoCanvas") != null) return;
+        if (offlinePlayer == null) return;
+
+        Vector3 spawnPos = offlinePlayer.transform.position;
+        Vector3 forward = offlinePlayer.transform.rotation * Vector3.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f) forward = Vector3.forward;
+        else forward.Normalize();
+
+        GameObject canvasGO = new GameObject("TutorialInfoCanvas");
+        Canvas canvas = canvasGO.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        if (Camera.main != null) canvas.worldCamera = Camera.main;
+
+        RectTransform canvasRect = canvasGO.GetComponent<RectTransform>();
+        canvasRect.sizeDelta = new Vector2(700f, 420f);
+        canvasGO.transform.localScale = Vector3.one * 0.01f;
+
+        Vector3 center = spawnPos + forward * 4.5f + Vector3.up * 2.2f;
+        canvasGO.transform.position = center;
+        Vector3 toEye = (spawnPos + Vector3.up * 1.4f) - center;
+        toEye.y = 0f;
+        if (toEye.sqrMagnitude < 0.0001f) toEye = -forward;
+        canvasGO.transform.rotation = Quaternion.LookRotation(toEye.normalized);
+
+        var panels = new (string title, string body, Color color)[]
+        {
+            ("CÓMO MOVERTE",
+             "Usa el joystick para caminar.\nArrastra para girar la cámara.",
+             new Color(0.35f, 0.9f, 1f)),
+            ("OBJETIVO",
+             "Recoge objetos y llévalos al edificio de entrega para sumar puntos.",
+             new Color(1f, 0.85f, 0.35f)),
+            ("CÓMO GANAR",
+             "Quien entregue más puntos gana y levanta su torre en el podio.",
+             new Color(0.45f, 1f, 0.55f)),
+        };
+        float[] xOffsets = { -240f, 0f, 240f };
+        for (int i = 0; i < panels.Length; i++)
+        {
+            CreateInfoPanel(canvasGO.transform, panels[i].title, panels[i].body, panels[i].color, xOffsets[i]);
+        }
+        infoCanvas = canvasGO;
+        Debug.Log("[TutorialManager] Paneles informativos creados frente al spawn.");
+    }
+
+    private void CreateInfoPanel(Transform parent, string title, string body, Color titleColor, float xOffset)
+    {
+        GameObject panelGO = new GameObject("InfoPanel_" + title);
+        panelGO.transform.SetParent(parent, false);
+
+        Image bg = panelGO.AddComponent<Image>();
+        bg.color = new Color(0.07f, 0.08f, 0.13f, 0.88f);
+        bg.raycastTarget = false;
+
+        RectTransform rect = panelGO.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = new Vector2(xOffset, 0f);
+        rect.sizeDelta = new Vector2(220f, 400f);
+
+        TMP_Text titleText = CreatePanelLabel(panelGO.transform, title, titleColor, 30, 60f, 10f, false);
+        titleText.fontStyle = FontStyles.Bold;
+        CreatePanelLabel(panelGO.transform, body, Color.white, 22, 130f, -60f, true);
+    }
+
+    private TextMeshProUGUI CreatePanelLabel(Transform parent, string text, Color color, int fontSize, float height, float yOffset, bool autoSize)
+    {
+        GameObject textGO = new GameObject("Text");
+        textGO.transform.SetParent(parent, false);
+        TextMeshProUGUI label = textGO.AddComponent<TextMeshProUGUI>();
+        if (TMP_Settings.defaultFontAsset != null)
+            label.font = TMP_Settings.defaultFontAsset;
+        label.text = text;
+        label.fontSize = fontSize;
+        if (autoSize)
+        {
+            label.enableAutoSizing = true;
+            label.fontSizeMin = 16;
+            label.fontSizeMax = fontSize;
+        }
+        label.color = color;
+        label.alignment = TextAlignmentOptions.Center;
+        label.textWrappingMode = TextWrappingModes.Normal;
+        label.raycastTarget = false;
+
+        RectTransform rect = textGO.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0f, 1f);
+        rect.anchorMax = new Vector2(1f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.anchoredPosition = new Vector2(0f, yOffset);
+        rect.sizeDelta = new Vector2(-16f, height);
+        return label;
+    }
+
+    private void CleanupInfoPanels()
+    {
+        if (infoCanvas != null)
+        {
+            Destroy(infoCanvas);
+            infoCanvas = null;
+        }
+    }
+
     // ── Salida del tutorial ─────────────────────────────────────────────────
 
     /// <summary>
@@ -476,6 +601,7 @@ public class TutorialManager : MonoBehaviour
     {
         IsTutorial = false;
         CleanupAutoExitButton();
+        CleanupInfoPanels();
         CleanupOfflinePlayer();
 
         if (enterRoutine != null)
@@ -492,13 +618,13 @@ public class TutorialManager : MonoBehaviour
             NetworkGameManager.Instance.ResetGame(true);
 
         if (SceneManager.GetActiveScene().name != connectionSceneName)
-            DiagonalSceneTransition.TransitionTo(connectionSceneName);
+            DiagonalSceneTransition.TransitionToForce(connectionSceneName);
     }
 
     /// <summary>Salida estática por si se necesita desde código sin referencia a la instancia.</summary>
     public static void ExitToMenu()
     {
         if (Instance != null) Instance.ExitTutorial();
-        else DiagonalSceneTransition.TransitionTo("ConnectionScene");
+        else DiagonalSceneTransition.TransitionToForce("ConnectionScene");
     }
 }

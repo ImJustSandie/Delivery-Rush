@@ -1,3 +1,4 @@
+using System.Collections;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
@@ -40,7 +41,12 @@ public class ClientConnectionUIHandler : MonoBehaviour
     [Tooltip("Intervalo de tiempo en segundos para la animacion de tres puntos.")]
     [SerializeField] private float dotAnimationInterval = 0.5f;
 
+    [Header("Transition")]
+    [Tooltip("Si la sincronizacion al Lobby tarda mas que esto (segundos), se revela la pantalla y se muestra error. La escena suele llegar en 1-3s.")]
+    [SerializeField] private float syncCoverTimeout = 20f;
+
     private Coroutine connectingAnimationCoroutine;
+    private Coroutine syncCoverWatchdog;
 
     private void Start()
     {
@@ -52,6 +58,7 @@ public class ClientConnectionUIHandler : MonoBehaviour
     private void OnDestroy()
     {
         StopConnectingAnimation();
+        StopSyncCoverWatchdog();
         UnsubscribeFromNetworkEvents();
     }
 
@@ -142,6 +149,10 @@ public class ClientConnectionUIHandler : MonoBehaviour
         {
             string displayInfo = !string.IsNullOrEmpty(rawInput) ? rawInput.ToUpper() : targetIP;
             StartConnectingAnimation($"Conectando a sala [{displayInfo}] ({targetIP})");
+            // El cambio a Lobby lo inicia el servidor por sincronizacion de red
+            // (el cliente no sabe cuando llegara): cubrir ya con la animacion de
+            // cierre y quedarse cubierto hasta que el Lobby se revele solo.
+            CloseTransitionForPendingSync();
         }
         else
         {
@@ -158,6 +169,16 @@ public class ClientConnectionUIHandler : MonoBehaviour
         Debug.Log($"[ClientConnectionUIHandler] Regresando a la escena previa: {previousSceneName}");
 
         StopConnectingAnimation();
+        StopSyncCoverWatchdog();
+
+        // Si el cierre preventivo esta a medias, abrir al instante para que el
+        // cambio de escena posterior pueda tomar la transicion (si no, lo ignora
+        // por estar en curso). Si ya quedo cerrado, TransitionTo lo maneja solo.
+        DiagonalSceneTransition transition = DiagonalSceneTransition.Instance;
+        if (transition != null && transition.IsTransitioning)
+        {
+            transition.SetOpenImmediate();
+        }
 
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
         {
@@ -190,7 +211,58 @@ public class ClientConnectionUIHandler : MonoBehaviour
         {
             Debug.LogWarning("[ClientConnectionUIHandler] Desconectado o la conexion fallo.");
             StopConnectingAnimation();
+            StopSyncCoverWatchdog();
             UpdateStatus("Conexion fallida o desconectada del host.");
+            // La sincronizacion no llegara: revelar si el cierre preventivo cubrio.
+            ReopenTransitionIfCovered();
+        }
+    }
+
+    /// <summary>
+    /// Reproduce la animacion de cierre y deja la pantalla cubierta hasta que la
+    /// escena sincronizada (Lobby) la revele con su apertura. Si no hay
+    /// instancia de transicion, no hace nada.
+    /// </summary>
+    private void CloseTransitionForPendingSync()
+    {
+        DiagonalSceneTransition transition = DiagonalSceneTransition.Instance;
+        if (transition != null && !transition.IsClosed && !transition.IsTransitioning)
+        {
+            transition.Close();
+        }
+        StopSyncCoverWatchdog();
+        syncCoverWatchdog = StartCoroutine(SyncCoverWatchdogRoutine());
+    }
+
+    /// <summary>
+    /// Si la sincronizacion tarda demasiado (sigue en esta escena), revela la
+    /// pantalla para no dejarla cubierta sin respuesta. Al cambiar de escena
+    /// este objeto se destruye y la rutina muere sola.
+    /// </summary>
+    private IEnumerator SyncCoverWatchdogRoutine()
+    {
+        yield return new WaitForSecondsRealtime(Mathf.Max(5f, syncCoverTimeout));
+        syncCoverWatchdog = null;
+        StopConnectingAnimation();
+        UpdateStatus("Tiempo de espera agotado. Verifica el codigo e intentalo de nuevo.");
+        ReopenTransitionIfCovered();
+    }
+
+    private void StopSyncCoverWatchdog()
+    {
+        if (syncCoverWatchdog != null)
+        {
+            StopCoroutine(syncCoverWatchdog);
+            syncCoverWatchdog = null;
+        }
+    }
+
+    private void ReopenTransitionIfCovered()
+    {
+        DiagonalSceneTransition transition = DiagonalSceneTransition.Instance;
+        if (transition != null && transition.IsClosed)
+        {
+            transition.Open();
         }
     }
 

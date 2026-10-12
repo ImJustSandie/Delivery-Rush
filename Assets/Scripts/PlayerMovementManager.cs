@@ -205,6 +205,11 @@ public class PlayerMovementManager : NetworkBehaviour
     // Estado del modificador temporal de velocidad (se aplica en el owner).
     private float baseMoveSpeed;
     private Coroutine speedEffectCoroutine;
+    // Congelación total del dummy del tutorial (SlowOthers): mientras está
+    // congelado no patrulla. Se maneja con tiempo, no con velocidad.
+    private float frozenUntil;
+    /// <summary>True mientras el dummy sigue congelado por un power-up.</summary>
+    public bool IsFrozen => Time.time < frozenUntil;
     [SerializeField] private float gravity = -9.81f;
     private float verticalVelocity;
 
@@ -222,6 +227,10 @@ public class PlayerMovementManager : NetworkBehaviour
     [Header("Height Lock (juego/tutorial)")]
     [Tooltip("Si es true, en escena de juego/tutorial el jugador no puede subir en Y por encima del suelo de aparición + tolerancia. No aplica en Podio/Lobby ni al dummy.")]
     [SerializeField] private bool lockHeightInGame = true;
+    [Tooltip("Si es true, la Y se clava en fixedHeightY cada frame (pega al piso sin necesidad de gravedad). Tiene prioridad sobre el bloqueo por tolerancia.")]
+    [SerializeField] private bool enforceFixedHeight = true;
+    [Tooltip("Altura Y constante del jugador en juego/tutorial.")]
+    [SerializeField] private float fixedHeightY = 0.2f;
     [Tooltip("Nombre de la escena de juego donde aplica el bloqueo de altura (el tutorial se detecta solo).")]
     [SerializeField] private string gameSceneName = "MainScene";
     [Tooltip("Cuánto puede subir sobre el suelo de aparición (escaloncitos, bordes).")]
@@ -486,6 +495,11 @@ public class PlayerMovementManager : NetworkBehaviour
     private void ClampHeightToAuthorized()
     {
         if (!ShouldConstrainHeight()) return;
+        if (enforceFixedHeight)
+        {
+            PinHeightToFixed();
+            return;
+        }
         if (!hasAuthorizedGroundY && !TryProbeAuthorizedGround()) return;
 
         float maxY = authorizedGroundY + Mathf.Max(0f, maxStepUpHeight);
@@ -494,6 +508,26 @@ public class PlayerMovementManager : NetworkBehaviour
             transform.position = new Vector3(transform.position.x, maxY, transform.position.z);
             if (verticalVelocity > 0f) verticalVelocity = 0f;
         }
+    }
+
+    /// <summary>
+    /// Clava la Y en <see cref="fixedHeightY"/> cada frame: si una colision u
+    /// objeto subio al jugador, lo devuelve abajo; si quedo enterrado, lo sube.
+    /// Pega al piso sin Rigidbody ni gravedad. No aplica en podio/lobby ni al dummy.
+    /// </summary>
+    private void PinHeightToFixed()
+    {
+        if (Mathf.Abs(transform.position.y - fixedHeightY) > 0.001f)
+        {
+            transform.position = new Vector3(transform.position.x, fixedHeightY, transform.position.z);
+        }
+        verticalVelocity = 0f;
+    }
+
+    /// <summary>True si la altura fija aplica este frame (puerta para gravedad y movimiento).</summary>
+    private bool IsFixedHeightActive()
+    {
+        return lockHeightInGame && enforceFixedHeight && ShouldConstrainHeight();
     }
 
     private void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode)
@@ -754,6 +788,14 @@ public class PlayerMovementManager : NetworkBehaviour
             return;
         }
 
+        // Altura fija constante (juego/tutorial): se verifica cada frame incluso
+        // con movimiento bloqueado (conteo inicial) o quieto, para devolver al
+        // jugador a fixedHeightY si alguna colision lo subio.
+        if (IsFixedHeightActive())
+        {
+            PinHeightToFixed();
+        }
+
         // Si el movimiento está bloqueado por conteo inicial (3, 2, 1), detener al jugador (Host y Clientes)
         bool isCountdownActive = MatchCountdownManager.Instance != null &&
                                  MatchCountdownManager.Instance.IsCountdownActive &&
@@ -824,7 +866,12 @@ public class PlayerMovementManager : NetworkBehaviour
 
         if (characterController != null && characterController.enabled)
         {
-            if (characterController.isGrounded && verticalVelocity < 0f)
+            if (IsFixedHeightActive())
+            {
+                // Sin gravedad: la Y la clava PinHeightToFixed cada frame.
+                verticalVelocity = 0f;
+            }
+            else if (characterController.isGrounded && verticalVelocity < 0f)
             {
                 verticalVelocity = -2f;
             }
@@ -838,7 +885,7 @@ public class PlayerMovementManager : NetworkBehaviour
         if (direction.sqrMagnitude > 1f) direction.Normalize();
 
         Vector3 velocity = direction * moveSpeed;
-        velocity.y = verticalVelocity;
+        velocity.y = IsFixedHeightActive() ? 0f : verticalVelocity;
 
         if (characterController != null && characterController.enabled)
         {
@@ -865,6 +912,18 @@ public class PlayerMovementManager : NetworkBehaviour
 
         // Detectar collectibles cercanos por proximidad (funciona tanto en host como en cliente)
         TryCollectNearby();
+    }
+
+    private void LateUpdate()
+    {
+        // Segunda pasada del pin de altura: corre despues del Animator, asi que
+        // gana aunque alguna animacion (Root Motion residual u otro script)
+        // haya movido el Transform este frame. Solo el dueño; los remotos
+        // siguen por sincronizacion de red.
+        if (!IsOwner && !IsOfflineTutorial) return;
+        if (IsDummy) return;
+        if (!IsFixedHeightActive()) return;
+        PinHeightToFixed();
     }
 
     /// <summary>
@@ -1177,6 +1236,12 @@ public class PlayerMovementManager : NetworkBehaviour
     /// </summary>
     private void UpdateDummyPatrol()
     {
+        // Congelado por power-up: quieto hasta que pase el efecto.
+        if (IsFrozen)
+        {
+            SetIsMoving(false);
+            return;
+        }
         if (dummyPatrolRoute.Count == 0)
         {
             SetIsMoving(false);
@@ -1308,12 +1373,14 @@ public class PlayerMovementManager : NetworkBehaviour
     }
 
     /// <summary>
-    /// Aplica el efecto de congelar/ralentizar a este jugador en modo offline
+    /// Aplica el efecto de congelar a este jugador en modo offline
     /// (usado por el dummy del tutorial cuando el usuario usa SlowOthers).
+    /// Parada total durante <paramref name="duration"/> + visual de slow.
     /// </summary>
     public void ApplyFreezeEffectOffline(float duration)
     {
-        ApplySpeedEffectLocal(slowMultiplier, duration);
+        frozenUntil = Time.time + Mathf.Max(0f, duration);
+        SetIsMoving(false);
         SetVisualEffectOffline(2, duration);
     }
 
@@ -1360,6 +1427,7 @@ public class PlayerMovementManager : NetworkBehaviour
         offlineScore = 0;
         offlinePowerUps.Clear();
         offlineVisualEffect = 0;
+        frozenUntil = 0f;
         CancelInvoke(nameof(ClearVisualEffectOffline));
         if (speedEffectCoroutine != null)
         {

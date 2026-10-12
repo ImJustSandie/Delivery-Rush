@@ -2150,7 +2150,7 @@ AudioListener:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1111844559}
-  m_Enabled: 0
+  m_Enabled: 1
 --- !u!20 &1111844561
 Camera:
   m_ObjectHideFlags: 0
@@ -2683,11 +2683,10 @@ MonoBehaviour:
   sceneMusicTracks:
   - sceneName: ConnectionScene
     musicClip: {fileID: 8300000, guid: 10efe6c2e08328046b0e1ad828194fb1, type: 3}
-  - sceneName: Lobby
-    musicClip: {fileID: 8300000, guid: 5b69b137f7e3d4248bd4831c56b99925, type: 3}
   - sceneName: MainScene
     musicClip: {fileID: 8300000, guid: b47e8a1f14b6f80438d9d740aec3f757, type: 3}
-  musicVolume: 0.3
+  musicVolume: 0
+  defaultMusicClip: {fileID: 8300000, guid: 10efe6c2e08328046b0e1ad828194fb1, type: 3}
   stopMusicWhenNoEntry: 0
   fadeDuration: 1
 --- !u!4 &1878132911
@@ -2857,6 +2856,14 @@ PrefabInstance:
       propertyPath: openDelay
       value: 0.8
       objectReference: {fileID: 0}
+    - target: {fileID: 2417084229472350546, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
+      propertyPath: openSound
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 2417084229472350546, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
+      propertyPath: closeSound
+      value: 
+      objectReference: {fileID: 8300000, guid: e9993fc0da2cd4d46a99de55c9d8c0f0, type: 3}
     - target: {fileID: 2473459815882466357, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
       propertyPath: m_Name
       value: Trancision
