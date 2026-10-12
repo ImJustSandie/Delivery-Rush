@@ -488,7 +488,7 @@ public class PodiumManager : MonoBehaviour
 
         if (winnerSound != null)
         {
-            AudioSource.PlayClipAtPoint(winnerSound, podiumCamera != null ? podiumCamera.transform.position : transform.position);
+            GameAudioManager.PlaySfxAtPoint(winnerSound, podiumCamera != null ? podiumCamera.transform.position : transform.position, 1f);
         }
 
         Debug.Log($"[PodiumManager] Letrero de ganador revelado: {winnerAnnouncement}");

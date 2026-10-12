@@ -38,6 +38,9 @@ public class GameAudioManager : MonoBehaviour
     [Tooltip("Volumen de la musica (0 a 1). Se guarda entre sesiones.")]
     [Range(0f, 1f)]
     [SerializeField] private float musicVolume = 0.7f;
+    [Tooltip("Volumen de los efectos / VFX (0 a 1). Se guarda entre sesiones. Multiplica a todos los sonidos puntuales.")]
+    [Range(0f, 1f)]
+    [SerializeField] private float sfxVolume = 1f;
     [Tooltip("Tema por defecto si al arrancar no hay musica sonando y la escena activa no tiene tema asignado. Si es null, se queda en silencio hasta llegar a una escena con tema.")]
     [SerializeField] private AudioClip defaultMusicClip;
     [Tooltip("Si es true, al entrar en una escena sin tema asignado la musica se detiene. Si es false (recomendado), sigue sonando el tema anterior sin cortes.")]
@@ -51,8 +54,13 @@ public class GameAudioManager : MonoBehaviour
     private AudioClip desiredTrack;
     private AudioClip fadingToClip;
     private const string VolumePrefsKey = "GameAudioManager.MusicVolume";
+    private const string SfxVolumePrefsKey = "GameAudioManager.SfxVolume";
+
+    /// <summary>Se invoca cada vez que cambia el volumen de musica o de efectos.</summary>
+    public static event System.Action VolumesChanged;
 
     public float MusicVolume => musicSource != null ? musicSource.volume : musicVolume;
+    public float SfxVolume => sfxVolume;
     public bool IsPlaying => musicSource != null && musicSource.isPlaying;
     public AudioClip CurrentTrack => musicSource != null ? musicSource.clip : null;
 
@@ -66,6 +74,7 @@ public class GameAudioManager : MonoBehaviour
         Instance = this;
         DontDestroyOnLoad(gameObject);
         musicVolume = PlayerPrefs.GetFloat(VolumePrefsKey, musicVolume);
+        sfxVolume = PlayerPrefs.GetFloat(SfxVolumePrefsKey, sfxVolume);
         EnsureMusicSource();
     }
 
@@ -226,22 +235,50 @@ public class GameAudioManager : MonoBehaviour
     /// <summary>
     /// Reproduce un efecto puntual global (2D: lo oyen todos los listeners por igual,
     /// sin importar la distancia). Crea un emisor temporal que se autodestruye.
+    /// El volumen final es volumen base * volumen de efectos (slider VFX/SFX).
     /// </summary>
     public static void PlayOneShot2D(AudioClip clip, float volume)
     {
         if (clip == null) return;
+        float finalVolume = Mathf.Clamp01(volume) * GetSfxVolume();
+        if (finalVolume <= 0.001f) return;
         GameObject go = new GameObject("OneShot2D_SFX");
         AudioSource source = go.AddComponent<AudioSource>();
         source.spatialBlend = 0f;
-        source.volume = Mathf.Clamp01(volume);
+        source.volume = finalVolume;
         source.PlayOneShot(clip);
         Destroy(go, clip.length + 0.1f);
     }
 
     /// <summary>
-    /// Cambia el volumen (0 a 1) y lo guarda entre sesiones.
+    /// Reproduce un efecto puntual 3D en una posicion (sobrevive al despawn/destroy).
+    /// El volumen final es volumen base * volumen de efectos (slider VFX/SFX).
+    /// Usalo para recolecciones, power-ups, fanfarrias, etc.
     /// </summary>
-    public void SetVolume(float volume)
+    public static void PlaySfxAtPoint(AudioClip clip, Vector3 position, float baseVolume = 1f)
+    {
+        if (clip == null) return;
+        float finalVolume = Mathf.Clamp01(baseVolume) * GetSfxVolume();
+        if (finalVolume <= 0.001f) return;
+        AudioSource.PlayClipAtPoint(clip, position, finalVolume);
+    }
+
+    /// <summary>Volumen global de efectos actual (0 a 1). Si no hay instancia, retorna 1.</summary>
+    public static float GetSfxVolume()
+    {
+        return Instance != null ? Instance.sfxVolume : 1f;
+    }
+
+    /// <summary>Aplica el volumen de efectos a un volumen base (0 a 1).</summary>
+    public static float ApplySfxVolume(float baseVolume)
+    {
+        return Mathf.Clamp01(baseVolume) * GetSfxVolume();
+    }
+
+    /// <summary>
+    /// Cambia el volumen de musica (0 a 1) y lo guarda entre sesiones.
+    /// </summary>
+    public void SetMusicVolume(float volume)
     {
         musicVolume = Mathf.Clamp01(volume);
         if (musicSource != null)
@@ -250,6 +287,27 @@ public class GameAudioManager : MonoBehaviour
         }
         PlayerPrefs.SetFloat(VolumePrefsKey, musicVolume);
         PlayerPrefs.Save();
+        VolumesChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Cambia el volumen de efectos/VFX (0 a 1) y lo guarda entre sesiones.
+    /// </summary>
+    public void SetSfxVolume(float volume)
+    {
+        sfxVolume = Mathf.Clamp01(volume);
+        PlayerPrefs.SetFloat(SfxVolumePrefsKey, sfxVolume);
+        PlayerPrefs.Save();
+        VolumesChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Cambia el volumen de musica (0 a 1) y lo guarda entre sesiones.
+    /// Alias historico de SetMusicVolume: se mantiene por compatibilidad.
+    /// </summary>
+    public void SetVolume(float volume)
+    {
+        SetMusicVolume(volume);
     }
 
     private AudioClip FindTrackForScene(string sceneName)
@@ -346,6 +404,7 @@ public class GameAudioManager : MonoBehaviour
     private void OnValidate()
     {
         musicVolume = Mathf.Clamp01(musicVolume);
+        sfxVolume = Mathf.Clamp01(sfxVolume);
         if (fadeDuration < 0f) fadeDuration = 0f;
     }
 #endif

@@ -350,7 +350,7 @@ public class DiagonalSceneTransition : MonoBehaviour
         sfxSource.loop = false;
         sfxSource.playOnAwake = false;
         sfxSource.spatialBlend = 0f;
-        sfxSource.volume = transitionSoundVolume;
+        sfxSource.volume = GameAudioManager.ApplySfxVolume(transitionSoundVolume);
     }
 
     private void PlayCloseSound()
@@ -377,7 +377,7 @@ public class DiagonalSceneTransition : MonoBehaviour
         {
             return;
         }
-        sfxSource.volume = Mathf.Clamp01(transitionSoundVolume);
+        sfxSource.volume = GameAudioManager.ApplySfxVolume(transitionSoundVolume);
         sfxSource.PlayOneShot(clip);
     }
 

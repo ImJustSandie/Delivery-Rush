@@ -326,11 +326,11 @@ public class InteractableCube : NetworkBehaviour
         PlayCollectSoundAt(collectSound, collectPosition, collectSoundVolume);
     }
 
-    /// <summary>Reproduce un clip puntual sin depender del GameObject (sobrevive al despawn/destroy).</summary>
+    /// <summary>Reproduce un clip puntual sin depender del GameObject (sobrevive al despawn/destroy). Respeta el volumen de efectos.</summary>
     public static void PlayCollectSoundAt(AudioClip clip, Vector3 position, float volume)
     {
         if (clip == null) return;
-        AudioSource.PlayClipAtPoint(clip, position, Mathf.Clamp01(volume));
+        GameAudioManager.PlaySfxAtPoint(clip, position, volume);
     }
 
     private bool PerformCollect(ulong playerNetworkObjectId)
