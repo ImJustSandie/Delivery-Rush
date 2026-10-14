@@ -2,6 +2,9 @@ using UnityEngine;
 
 public static class PlayerCustomizationData
 {
+    public const int MaxPlayerNameLength = 8;
+    public const string DefaultPlayerName = "Jugador";
+
     private const string KeyPlayerName = "PlayerCustomization_PlayerName";
     private const string KeyHatIndex = "PlayerCustomization_HatIndex";
     private const string KeyBodyIndex = "PlayerCustomization_BodyIndex";
@@ -11,10 +14,34 @@ public static class PlayerCustomizationData
 
     public static string PlayerName
     {
-        get => PlayerPrefs.GetString(KeyPlayerName, "Repartidor");
+        get
+        {
+            string storedName = PlayerPrefs.GetString(KeyPlayerName, DefaultPlayerName);
+            if (string.IsNullOrWhiteSpace(storedName))
+            {
+                return DefaultPlayerName;
+            }
+            if (storedName.Length > MaxPlayerNameLength)
+            {
+                storedName = storedName.Substring(0, MaxPlayerNameLength);
+                PlayerPrefs.SetString(KeyPlayerName, storedName);
+                PlayerPrefs.Save();
+            }
+            return storedName;
+        }
         set
         {
-            PlayerPrefs.SetString(KeyPlayerName, value);
+            string cleanName = value?.Trim();
+            if (string.IsNullOrWhiteSpace(cleanName))
+            {
+                cleanName = DefaultPlayerName;
+            }
+            else if (cleanName.Length > MaxPlayerNameLength)
+            {
+                cleanName = cleanName.Substring(0, MaxPlayerNameLength);
+            }
+
+            PlayerPrefs.SetString(KeyPlayerName, cleanName);
             PlayerPrefs.Save();
         }
     }

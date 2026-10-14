@@ -147,14 +147,21 @@ public class MatchTimerManager : NetworkBehaviour
         // Solo el servidor debe iniciar el timer; clientes nunca inician por fallback
         if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
         if (IsRunning) return;
-        if (MatchCountdownManager.Instance != null && MatchCountdownManager.Instance.IsCountdownActive) return;
+        if (MatchCountdownManager.Instance != null) return;
         StartTimer();
     }
 
     private bool IsInMainScene() => SceneManager.GetActiveScene().name == mainSceneName;
 
     private void OnRemainingChanged(float prev, float current) => RemainingTimeChanged?.Invoke(current);
-    private void OnRunningChanged(bool prev, bool current) { if (!current && prev) MatchEnded?.Invoke(); }
+    private void OnRunningChanged(bool prev, bool current)
+    {
+        if (!current && prev)
+        {
+            MatchEnded?.Invoke();
+            StopAllActivePlayerPowerUpsLocally();
+        }
+    }
     private void OnStartTimeChanged(double prev, double current)
     {
         // Clientes recalculan inmediatamente
@@ -249,10 +256,37 @@ public class MatchTimerManager : NetworkBehaviour
         else localRemainingTime = 0f;
         RemainingTimeChanged?.Invoke(0f);
         MatchEnded?.Invoke();
+
+        StopAllActivePlayerPowerUps();
+
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
             DiagonalSceneTransition.TransitionTo(podiumSceneName);
         else if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
             DiagonalSceneTransition.TransitionTo(podiumSceneName);
+    }
+
+    private void StopAllActivePlayerPowerUps()
+    {
+        PlayerMovementManager[] players = FindObjectsByType<PlayerMovementManager>(FindObjectsSortMode.None);
+        bool isServer = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && NetworkManager.Singleton.IsServer;
+        foreach (PlayerMovementManager p in players)
+        {
+            if (p == null) continue;
+            if (isServer)
+                p.ClearActivePowerUpEffectsServerSide();
+            else
+                p.ClearActivePowerUpEffectsLocally();
+        }
+    }
+
+    private void StopAllActivePlayerPowerUpsLocally()
+    {
+        PlayerMovementManager[] players = FindObjectsByType<PlayerMovementManager>(FindObjectsSortMode.None);
+        foreach (PlayerMovementManager p in players)
+        {
+            if (p != null)
+                p.ClearActivePowerUpEffectsLocally();
+        }
     }
 
     public string GetFormattedTime()

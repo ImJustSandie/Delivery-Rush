@@ -11,6 +11,12 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
 
     [Header("UI Controls")]
     [SerializeField] private TMPro.TMP_InputField nameInputField;
+    [Tooltip("Etiqueta para mostrar el contador de caracteres (ej: 7/8). Si se deja vacía, se crea automáticamente.")]
+    [SerializeField] private TMPro.TextMeshProUGUI charCountLabel;
+    [Tooltip("Color del contador en estado normal (oscuro para resaltar sobre fondo blanco).")]
+    [SerializeField] private Color countNormalColor = new Color(0.25f, 0.25f, 0.25f, 0.75f);
+    [Tooltip("Color del contador al alcanzar el límite máximo de caracteres.")]
+    [SerializeField] private Color countLimitColor = new Color(0.85f, 0.35f, 0.1f, 1f);
 
     [Header("Scene Navigation")]
     [SerializeField] private string connectionSceneName = "ConnectionScene";
@@ -42,9 +48,13 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
 
         if (nameInputField != null)
         {
+            nameInputField.characterLimit = PlayerCustomizationData.MaxPlayerNameLength;
             nameInputField.text = PlayerCustomizationData.PlayerName;
             nameInputField.onValueChanged.AddListener(OnPlayerNameChanged);
         }
+
+        EnsureCharCountLabel();
+        UpdateCharCount(nameInputField != null ? nameInputField.text : PlayerCustomizationData.PlayerName);
 
         UpdateAllPreviews();
         UpdateAllSelectionVisuals();
@@ -60,12 +70,79 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
 
     public void OnPlayerNameChanged(string newName)
     {
+        if (newName != null && newName.Length > PlayerCustomizationData.MaxPlayerNameLength)
+        {
+            newName = newName.Substring(0, PlayerCustomizationData.MaxPlayerNameLength);
+            nameInputField.text = newName;
+        }
+
+        UpdateCharCount(newName);
+
         PlayerCustomizationData.PlayerName = newName;
         if (preview != null)
         {
             preview.ApplyPlayerName(newName);
         }
         SyncWithNetwork();
+    }
+
+    private void EnsureCharCountLabel()
+    {
+        if (charCountLabel != null || nameInputField == null) return;
+
+        if (nameInputField.textComponent != null)
+        {
+            GameObject countObj = Instantiate(nameInputField.textComponent.gameObject, nameInputField.transform);
+            countObj.name = "CharCountLabel";
+            charCountLabel = countObj.GetComponent<TMPro.TextMeshProUGUI>();
+            if (charCountLabel != null)
+            {
+                charCountLabel.raycastTarget = false;
+                charCountLabel.text = "";
+                charCountLabel.alignment = TMPro.TextAlignmentOptions.MidlineRight;
+                charCountLabel.fontSize = Mathf.Max(20f, nameInputField.textComponent.fontSize * 0.65f);
+                charCountLabel.color = countNormalColor;
+            }
+
+            RectTransform rect = countObj.GetComponent<RectTransform>();
+            if (rect != null)
+            {
+                rect.anchorMin = new Vector2(1f, 0f);
+                rect.anchorMax = new Vector2(1f, 1f);
+                rect.pivot = new Vector2(1f, 0.5f);
+                rect.anchoredPosition = new Vector2(-25f, 0f);
+                rect.sizeDelta = new Vector2(140f, 0f);
+            }
+        }
+        else
+        {
+            GameObject countObj = new GameObject("CharCountLabel", typeof(RectTransform));
+            countObj.transform.SetParent(nameInputField.transform, false);
+
+            charCountLabel = countObj.AddComponent<TMPro.TextMeshProUGUI>();
+            charCountLabel.raycastTarget = false;
+            charCountLabel.fontSize = 26f;
+            charCountLabel.alignment = TMPro.TextAlignmentOptions.MidlineRight;
+            charCountLabel.color = countNormalColor;
+
+            RectTransform rect = countObj.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(1f, 0f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(1f, 0.5f);
+            rect.anchoredPosition = new Vector2(-25f, 0f);
+            rect.sizeDelta = new Vector2(140f, 0f);
+        }
+    }
+
+    private void UpdateCharCount(string text)
+    {
+        if (charCountLabel == null) return;
+
+        int currentCount = string.IsNullOrEmpty(text) ? 0 : text.Length;
+        charCountLabel.text = $"{currentCount}/{PlayerCustomizationData.MaxPlayerNameLength}";
+        charCountLabel.color = (currentCount >= PlayerCustomizationData.MaxPlayerNameLength)
+            ? countLimitColor
+            : countNormalColor;
     }
 
     // --- Hat Customization ---
@@ -270,10 +347,9 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
     }
 
     /// <summary>
-    /// Cierra el panel padre del botón que lo invoca. Asignar a OnClick del botón
-    /// en Unity Inspector sin arrastrar ninguna referencia (sin parámetros).
-    /// Busca hacia arriba el padre más cercano cuyo nombre contenga "Panel";
-    /// si no lo encuentra, cierra el padre directo.
+    /// Cierra el panel padre superior (más externo) del botón que lo invoca.
+    /// Asignar al OnClick del botón en Unity Inspector sin arrastrar ninguna referencia (sin parámetros).
+    /// Busca hacia arriba el ancestro más alto cuyo nombre contenga "Panel" antes del Canvas.
     /// </summary>
     public void ClosePanel()
     {
@@ -283,28 +359,52 @@ public class CharacterCustomizationUIHandler : MonoBehaviour
 
         if (clickedButton == null) return;
 
-        Transform parentPanel = FindParentPanel(clickedButton.transform);
-        if (parentPanel != null)
+        Transform outermostPanel = FindOutermostParentPanel(clickedButton.transform);
+        if (outermostPanel != null)
         {
-            parentPanel.gameObject.SetActive(false);
+            outermostPanel.gameObject.SetActive(false);
         }
     }
 
-    private static Transform FindParentPanel(Transform start)
+    /// <summary>
+    /// Cierra un panel específico pasado como parámetro (o el padre más externo si es null).
+    /// </summary>
+    public void ClosePanel(GameObject panel)
+    {
+        if (panel != null)
+        {
+            panel.SetActive(false);
+            return;
+        }
+        ClosePanel();
+    }
+
+    private static Transform FindOutermostParentPanel(Transform start)
     {
         Transform current = start.parent;
-        Transform fallback = current;
+        Transform outermostPanel = null;
+        Transform topChildUnderCanvas = null;
 
         while (current != null)
         {
+            // Detener la búsqueda si alcanzamos un Canvas para nunca desactivar el Canvas raíz
+            if (current.GetComponent<Canvas>() != null)
+            {
+                break;
+            }
+
+            // Cada coincidencia con "panel" que encontremos más arriba reemplaza a la anterior,
+            // garantizando que al terminar el ciclo obtengamos el panel superior más grande
             if (current.name.ToLower().Contains("panel"))
             {
-                return current;
+                outermostPanel = current;
             }
+
+            topChildUnderCanvas = current;
             current = current.parent;
         }
 
-        return fallback;
+        return outermostPanel != null ? outermostPanel : (topChildUnderCanvas ?? start.parent);
     }
 
     public void ReturnToConnectionScene()

@@ -47,6 +47,8 @@ public class PodiumManager : MonoBehaviour
     [SerializeField] private float jumpDuration = 0.45f;
     [Tooltip("Salto continuo mientras se construye, luego cada X seg.")]
     [SerializeField] private float idleJumpInterval = 1.2f;
+    [Tooltip("Exponente de la curva de aceleración. Valores menores (ej. 0.6 - 0.75) hacen que la aceleración comience antes en la torre; 1.0 es lineal; 2.0 acelera recién al final.")]
+    [SerializeField, Range(0.2f, 2.5f)] private float jumpAccelerationExponent = 0.7f;
 
     [Header("Ranking UI (opcional)")]
     [Tooltip("Textos opcionales para mostrar nombre/puntos en cada podio. Index 0=1º")]
@@ -186,6 +188,17 @@ public class PodiumManager : MonoBehaviour
         ResolveSlots();
         RankPlayers();
 
+        // Limpiar cualquier efecto visual o estado de power-up residual en todos los jugadores
+        foreach (var pm in rankedPlayers)
+        {
+            if (pm == null) continue;
+            pm.ClearActivePowerUpEffectsLocally();
+            if (pm.TryGetComponent<PowerUpVisuals>(out var visuals))
+            {
+                visuals.ResetVisuals();
+            }
+        }
+
         // Configurar cámara de podio: usar Main Camera y desactivar PlayerCameras para tener una sola vista
         podiumCamera = Camera.main;
         if (podiumCamera == null) podiumCamera = FindFirstObjectByType<Camera>();
@@ -242,18 +255,54 @@ public class PodiumManager : MonoBehaviour
 
         // Iniciar animación de salto + torres para cada jugador (local, determinista)
         int activeTowerBuilders = 0;
+        int maxBlocksAcrossPlayers = 0;
         for (int i = 0; i < rankedPlayers.Count && i < podiumSlots.Length; i++)
         {
+            if (rankedPlayers[i] != null)
+            {
+                int blocks = rankedPlayers[i].Score + rankedPlayers[i].CollectedCount;
+                if (blocks > maxBlocksAcrossPlayers) maxBlocksAcrossPlayers = blocks;
+            }
             activeTowerBuilders++;
             StartCoroutine(BuildTowerAndJumpRoutine(rankedPlayers[i], podiumSlots[i], () => activeTowerBuilders--));
         }
 
+        // Calcular tiempo de seguridad dinámico sumando la duración exacta de cada bloque de la torre más alta
+        float expectedMaxBuildTime = 0f;
+        for (int b = 0; b < maxBlocksAcrossPlayers; b++)
+        {
+            GetStepDurations(b, maxBlocksAcrossPlayers, out float jTime, out float waitTime);
+            expectedMaxBuildTime += (jTime + waitTime);
+        }
+        float safetyTimer = expectedMaxBuildTime + 8f;
+
         // Esperar a que terminen de construirse todas las torres y se ejecuten las animaciones
-        float safetyTimer = maxBuildDuration + 5f;
         while (activeTowerBuilders > 0 && safetyTimer > 0f)
         {
             safetyTimer -= Time.deltaTime;
             yield return null;
+        }
+
+        // Si expiró el temporizador de emergencia, asegurar que todos los jugadores queden posicionados y con animación
+        if (activeTowerBuilders > 0)
+        {
+            Debug.LogWarning("[PodiumManager] safetyTimer expiró mientras se construían torres. Asegurando posición final y animaciones de podio.");
+            for (int i = 0; i < rankedPlayers.Count && i < podiumSlots.Length; i++)
+            {
+                PlayerMovementManager pm = rankedPlayers[i];
+                if (pm == null) continue;
+                int blocks = pm.Score + pm.CollectedCount;
+                Transform slot = podiumSlots[i];
+                if (slot != null)
+                {
+                    Vector3 finalPos = slot.position + Vector3.up * (playerHeightOffset + blocks * blockHeight);
+                    CharacterController cc = pm.GetComponent<CharacterController>();
+                    if (cc != null) cc.enabled = false;
+                    pm.transform.position = finalPos;
+                    if (cc != null) cc.enabled = true;
+                }
+                TriggerPostJumpAnimation(pm);
+            }
         }
 
         // Revelar el cartel de ganador una vez culminadas las torres y animaciones
@@ -350,6 +399,13 @@ public class PodiumManager : MonoBehaviour
         Vector3 pos = slot.position + Vector3.up * playerHeightOffset;
         Quaternion rot = slot.rotation;
 
+        // Limpiar cualquier efecto o modelo residual de power-ups
+        pm.ClearActivePowerUpEffectsLocally();
+        if (pm.TryGetComponent<PowerUpVisuals>(out var visuals))
+        {
+            visuals.ResetVisuals();
+        }
+
         // Desactivar movimiento autónomo del jugador durante el podio para que no interfiera con la animación
         pm.enabled = false;
 
@@ -374,16 +430,14 @@ public class PodiumManager : MonoBehaviour
         int totalBlocks = player.Score + player.CollectedCount;
         if (totalBlocks > 0)
         {
-            // Calcular intervalo adaptado para no tardar demasiado si hay muchos puntos
-            float interval = blockSpawnInterval;
-            if (totalBlocks * interval > maxBuildDuration)
-                interval = maxBuildDuration / totalBlocks;
-
             Vector3 basePos = slot.position;
             int playerSeed = GetPlayerSlotIndex(player);
 
             for (int i = 0; i < totalBlocks; i++)
             {
+                // Velocidad progresiva: comienza pausado en los primeros bloques y acelera exponencialmente
+                GetStepDurations(i, totalBlocks, out float currentJumpDuration, out float currentInterval);
+
                 Vector3 blockPos = basePos + Vector3.up * (i * blockHeight);
 
                 // Bloque aleatorio de la lista disponible (items) o bloque clasico.
@@ -391,11 +445,11 @@ public class PodiumManager : MonoBehaviour
                 block.name = $"Tower_{player.OwnerClientId}_{i}";
                 spawnedBlocks.Add(block);
 
-                // Animar exactamente 1 salto por bloque hasta la nueva altura
+                // Animar exactamente 1 salto por bloque hasta la nueva altura usando la duración calculada
                 Vector3 targetPlayerPos = basePos + Vector3.up * (playerHeightOffset + (i + 1) * blockHeight);
-                yield return AnimateJump(player, targetPlayerPos);
+                yield return AnimateJump(player, targetPlayerPos, currentJumpDuration);
 
-                yield return new WaitForSeconds(interval);
+                yield return new WaitForSeconds(currentInterval);
             }
 
             Debug.Log($"[PodiumManager] {player.name} completó torre de {totalBlocks} bloques.");
@@ -408,6 +462,47 @@ public class PodiumManager : MonoBehaviour
         // Determinar si es 1er lugar para activar la animación adecuada
         TriggerPostJumpAnimation(player);
         onComplete?.Invoke();
+    }
+
+    /// <summary>
+    /// Calcula dinámicamente la duración del salto e intervalo para el bloque actual.
+    /// Comienza a velocidad normal y acelera progresivamente conforme se acumulan más objetos.
+    /// </summary>
+    private void GetStepDurations(int blockIndex, int totalBlocks, out float currentJumpDuration, out float currentInterval)
+    {
+        float baseJump = jumpDuration;
+        float baseInterval = blockSpawnInterval;
+
+        if (totalBlocks <= 1)
+        {
+            currentJumpDuration = baseJump;
+            currentInterval = baseInterval;
+            return;
+        }
+
+        // Determinar velocidad final según el total de bloques (más bloques = crescendo más rápido)
+        float endJump;
+        float endInterval;
+        if (totalBlocks <= 5)
+        {
+            float tLow = (totalBlocks - 1) / 4f;
+            endJump = Mathf.Lerp(baseJump, 0.32f, tLow);
+            endInterval = Mathf.Lerp(baseInterval, 0.14f, tLow);
+        }
+        else
+        {
+            float tHigh = Mathf.Clamp01((totalBlocks - 5f) / 20f);
+            endJump = Mathf.Lerp(0.32f, 0.14f, tHigh);
+            endInterval = Mathf.Lerp(0.14f, 0.04f, tHigh);
+        }
+
+        // Curva de aceleración: con jumpAccelerationExponent < 1.0 (ej. 0.7f), la aceleración ocurre más temprano en la torre
+        float progress = Mathf.Clamp01((float)blockIndex / (totalBlocks - 1));
+        float exp = jumpAccelerationExponent > 0f ? jumpAccelerationExponent : 0.7f;
+        float curve = Mathf.Pow(progress, exp);
+
+        currentJumpDuration = Mathf.Lerp(baseJump, endJump, curve);
+        currentInterval = Mathf.Lerp(baseInterval, endInterval, curve);
     }
 
     private IEnumerator RevealWinnerBannerRoutine()
@@ -675,9 +770,12 @@ public class PodiumManager : MonoBehaviour
         block.isStatic = true;
     }
 
-    private IEnumerator AnimateJump(PlayerMovementManager player, Vector3 targetPos)
+    private IEnumerator AnimateJump(PlayerMovementManager player, Vector3 targetPos, float customJumpDuration = -1f)
     {
         if (player == null) yield break;
+        float actualJumpDuration = customJumpDuration > 0f ? customJumpDuration : jumpDuration;
+        float jumpHeightRatio = Mathf.Clamp(actualJumpDuration / Mathf.Max(0.01f, jumpDuration), 0.75f, 1f);
+        float actualJumpHeight = jumpHeight * jumpHeightRatio;
         Vector3 startPos = player.transform.position;
         // Si ya está en target, solo hacer pequeño salto vertical
         if (Vector3.Distance(new Vector3(startPos.x, 0, startPos.z), new Vector3(targetPos.x, 0, targetPos.z)) < 0.01f)
@@ -687,8 +785,8 @@ public class PodiumManager : MonoBehaviour
             Vector3 basePos = new Vector3(startPos.x, targetPos.y, startPos.z);
             while (t < 1f)
             {
-                t += Time.deltaTime / jumpDuration;
-                float y = Mathf.Sin(t * Mathf.PI) * jumpHeight;
+                t += Time.deltaTime / actualJumpDuration;
+                float y = Mathf.Sin(t * Mathf.PI) * actualJumpHeight;
                 CharacterController cc = player.GetComponent<CharacterController>();
                 if (cc != null) cc.enabled = false;
                 player.transform.position = basePos + Vector3.up * y;
@@ -707,9 +805,9 @@ public class PodiumManager : MonoBehaviour
             float t = 0f;
             while (t < 1f)
             {
-                t += Time.deltaTime / jumpDuration;
+                t += Time.deltaTime / actualJumpDuration;
                 Vector3 horiz = Vector3.Lerp(startPos, targetPos, t);
-                float y = Mathf.Sin(t * Mathf.PI) * jumpHeight;
+                float y = Mathf.Sin(t * Mathf.PI) * actualJumpHeight;
                 horiz.y += y;
                 CharacterController cc = player.GetComponent<CharacterController>();
                 if (cc != null) cc.enabled = false;
@@ -744,6 +842,7 @@ public class PodiumManager : MonoBehaviour
         if (blockSpawnInterval <= 0f) blockSpawnInterval = 0.1f;
         if (fallbackSpacing <= 0f) fallbackSpacing = 3f;
         if (cameraFollowThresholdBlocks < 0) cameraFollowThresholdBlocks = 0;
+        if (jumpAccelerationExponent <= 0f) jumpAccelerationExponent = 0.7f;
     }
 #endif
 }

@@ -383,6 +383,63 @@ public class PlayerMovementManager : NetworkBehaviour
         activeVisualEffect.Value = 0;
     }
 
+    /// <summary>Cancela y limpia de forma inmediata todos los efectos activos de power-up para este jugador en red.</summary>
+    public void ClearActivePowerUpEffectsServerSide()
+    {
+        if (!IsServer && !IsOfflineTutorial) return;
+
+        if (IsOfflineTutorial)
+        {
+            ClearActivePowerUpEffectsOffline();
+            return;
+        }
+
+        CancelInvoke(nameof(ClearVisualEffectServerSide));
+        activeVisualEffect.Value = 0;
+        ClearSpeedEffectClientRpc();
+        ClearActivePowerUpEffectsLocally();
+    }
+
+    /// <summary>Limpia todos los efectos activos de power-up en modo tutorial/offline.</summary>
+    public void ClearActivePowerUpEffectsOffline()
+    {
+        CancelInvoke(nameof(ClearVisualEffectOffline));
+        offlineVisualEffect = 0;
+        ClearActivePowerUpEffectsLocally();
+    }
+
+    /// <summary>Detiene y limpia inmediatamente cualquier efecto activo de power-up localmente (velocidad, congelamiento, visuales).</summary>
+    public void ClearActivePowerUpEffectsLocally()
+    {
+        ClearSpeedEffectLocally();
+        frozenUntil = 0f;
+        CancelInvoke(nameof(ClearVisualEffectOffline));
+        PowerUpVisuals visuals = GetComponent<PowerUpVisuals>();
+        if (visuals != null)
+        {
+            visuals.ResetVisuals();
+        }
+    }
+
+    private void ClearSpeedEffectLocally()
+    {
+        if (speedEffectCoroutine != null)
+        {
+            StopCoroutine(speedEffectCoroutine);
+            speedEffectCoroutine = null;
+        }
+        if (baseMoveSpeed > 0f)
+        {
+            moveSpeed = baseMoveSpeed;
+        }
+    }
+
+    [Rpc(SendTo.Owner)]
+    private void ClearSpeedEffectClientRpc()
+    {
+        ClearSpeedEffectLocally();
+    }
+
     private void OnEnable()
     {
         if (interactButton != null)
@@ -543,6 +600,19 @@ public class PlayerMovementManager : NetworkBehaviour
         if (IsOfflineTutorial && scene.name == lobbySceneName)
         {
             ResetOfflineState();
+        }
+
+        // Limpiar efectos activos de power-up si entramos a Podio o Lobby
+        if (IsPodiumSceneName(scene.name) || scene.name == lobbySceneName)
+        {
+            if (IsServer)
+            {
+                ClearActivePowerUpEffectsServerSide();
+            }
+            else
+            {
+                ClearActivePowerUpEffectsLocally();
+            }
         }
 
         // Si el PodiumManager desactivó este componente, reactivarlo al entrar en una nueva escena
@@ -796,12 +866,11 @@ public class PlayerMovementManager : NetworkBehaviour
             PinHeightToFixed();
         }
 
-        // Si el movimiento está bloqueado por conteo inicial (3, 2, 1), detener al jugador (Host y Clientes)
-        bool isCountdownActive = MatchCountdownManager.Instance != null &&
-                                 MatchCountdownManager.Instance.IsCountdownActive &&
-                                 MatchCountdownManager.Instance.CurrentCountdownValue > 0;
+        // Si el movimiento está bloqueado por tutorial express o conteo inicial (3, 2, 1), detener al jugador (Host y Clientes)
+        bool isPreMatchActive = MatchCountdownManager.Instance != null &&
+                                MatchCountdownManager.Instance.IsPreMatchActive;
 
-        if (!AllowMovement || isCountdownActive)
+        if (!AllowMovement || isPreMatchActive)
         {
             SetIsMoving(false);
             return;

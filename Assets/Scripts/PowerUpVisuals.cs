@@ -124,6 +124,25 @@ public class PowerUpVisuals : NetworkBehaviour
             ClearSlowOverlay();
     }
 
+    /// <summary>
+    /// Restablece inmediatamente todos los visuales al estado normal (oculta el modelo de boost y restaura texturas).
+    /// </summary>
+    public void ResetVisuals()
+    {
+        boostActive = false;
+        if (boostModel != null && boostModel.activeSelf)
+        {
+            boostModel.SetActive(false);
+        }
+        foreach (Renderer r in normalRenderers)
+        {
+            if (r != null) r.enabled = true;
+        }
+
+        slowActive = false;
+        ClearSlowOverlay();
+    }
+
     // ── Audio de activación (eventos, no estado visual) ──────────────────────
 
     /// <summary>Emite el sonido de congelar a todos. Solo la invoca el servidor al activar SlowOthers.</summary>

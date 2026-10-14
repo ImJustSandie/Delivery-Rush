@@ -84,7 +84,12 @@ public class CharacterCustomizationPreview : MonoBehaviour
     {
         if (nameTextLabel != null)
         {
-            nameTextLabel.text = string.IsNullOrWhiteSpace(newName) ? "Repartidor" : newName;
+            if (string.IsNullOrWhiteSpace(newName))
+                nameTextLabel.text = PlayerCustomizationData.DefaultPlayerName;
+            else if (newName.Length > PlayerCustomizationData.MaxPlayerNameLength)
+                nameTextLabel.text = newName.Substring(0, PlayerCustomizationData.MaxPlayerNameLength);
+            else
+                nameTextLabel.text = newName;
         }
 
         LobbyPlayerDisplay display = GetComponent<LobbyPlayerDisplay>();

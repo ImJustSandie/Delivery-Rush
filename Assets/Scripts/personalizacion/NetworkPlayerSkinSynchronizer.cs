@@ -21,7 +21,7 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
     private readonly NetworkVariable<int> netBagIndex = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private readonly NetworkVariable<int> netShirtIndex = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private readonly NetworkVariable<int> netSkinIndex = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-    private readonly NetworkVariable<FixedString64Bytes> netPlayerName = new NetworkVariable<FixedString64Bytes>("Repartidor", NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    private readonly NetworkVariable<FixedString64Bytes> netPlayerName = new NetworkVariable<FixedString64Bytes>(PlayerCustomizationData.DefaultPlayerName, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     public string PlayerName
     {
@@ -142,9 +142,17 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
     /// </summary>
     public void UpdatePlayerName(string newName)
     {
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            newName = PlayerCustomizationData.DefaultPlayerName;
+        }
+        else if (newName.Length > PlayerCustomizationData.MaxPlayerNameLength)
+        {
+            newName = newName.Substring(0, PlayerCustomizationData.MaxPlayerNameLength);
+        }
+
         if (IsOfflineTutorial)
         {
-            if (string.IsNullOrWhiteSpace(newName)) newName = "Repartidor";
             if (customizationPreview == null)
                 customizationPreview = GetComponent<CharacterCustomizationPreview>();
             customizationPreview?.ApplyPlayerName(newName);
@@ -152,11 +160,6 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
             return;
         }
         if (!IsOwner) return;
-
-        if (string.IsNullOrWhiteSpace(newName))
-        {
-            newName = "Repartidor";
-        }
 
         if (IsSpawned)
         {
@@ -208,7 +211,11 @@ public class NetworkPlayerSkinSynchronizer : NetworkBehaviour
     [ServerRpc]
     private void SubmitPlayerNameServerRpc(string name)
     {
-        if (string.IsNullOrWhiteSpace(name)) name = "Repartidor";
+        if (string.IsNullOrWhiteSpace(name))
+            name = PlayerCustomizationData.DefaultPlayerName;
+        else if (name.Length > PlayerCustomizationData.MaxPlayerNameLength)
+            name = name.Substring(0, PlayerCustomizationData.MaxPlayerNameLength);
+
         netPlayerName.Value = new FixedString64Bytes(name);
     }
 

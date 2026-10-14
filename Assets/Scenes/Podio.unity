@@ -358,7 +358,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &348653508
+--- !u!1 &446129396
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -366,9 +366,9 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 348653509}
-  - component: {fileID: 348653511}
-  - component: {fileID: 348653510}
+  - component: {fileID: 446129397}
+  - component: {fileID: 446129399}
+  - component: {fileID: 446129398}
   m_Layer: 5
   m_Name: WinnerBanner
   m_TagString: Untagged
@@ -376,48 +376,48 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!224 &348653509
+--- !u!224 &446129397
 RectTransform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 348653508}
+  m_GameObject: {fileID: 446129396}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 0.49688995, y: 0.21941361, z: 0.35482}
+  m_LocalScale: {x: 0.49892578, y: 0.49892578, z: 0.49892578}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1177222306}
   m_Father: {fileID: 897905350}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: 345}
-  m_SizeDelta: {x: 0, y: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 41, y: 320}
+  m_SizeDelta: {x: 2092.522, y: 752.00006}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!114 &348653510
+--- !u!114 &446129398
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 348653508}
+  m_GameObject: {fileID: 446129396}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
-  m_Color: {r: 0, g: 0, b: 0, a: 0.5568628}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 10907, guid: 0000000000000000f000000000000000, type: 0}
-  m_Type: 1
+  m_Sprite: {fileID: 21300000, guid: 28281e1b1a036e44485ca07420421a12, type: 3}
+  m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
   m_FillMethod: 4
@@ -426,13 +426,13 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
---- !u!222 &348653511
+--- !u!222 &446129399
 CanvasRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 348653508}
+  m_GameObject: {fileID: 446129396}
   m_CullTransparentMesh: 1
 --- !u!1 &470190513
 GameObject:
@@ -535,7 +535,7 @@ MonoBehaviour:
   m_ScaleFactor: 1
   m_ReferenceResolution: {x: 1920, y: 1080}
   m_ScreenMatchMode: 0
-  m_MatchWidthOrHeight: 0.7
+  m_MatchWidthOrHeight: 1
   m_PhysicalUnit: 3
   m_FallbackScreenDPI: 96
   m_DefaultSpriteDPI: 96
@@ -736,7 +736,7 @@ RectTransform:
   m_Children:
   - {fileID: 631808116}
   - {fileID: 1998312963}
-  - {fileID: 348653509}
+  - {fileID: 446129397}
   m_Father: {fileID: 531161561}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -919,16 +919,16 @@ RectTransform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1177222305}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1.7953, z: 1}
+  m_LocalScale: {x: 0.45885, y: 0.63292825, z: 0.32765636}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 348653509}
+  m_Father: {fileID: 446129397}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 118}
+  m_AnchoredPosition: {x: -15, y: -199.14539}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1177222307
@@ -960,8 +960,8 @@ MonoBehaviour:
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4294945531
-  m_fontColor: {r: 0.9838228, g: 0.6650944, b: 1, a: 1}
+    rgba: 4294967295
+  m_fontColor: {r: 1, g: 1, b: 1, a: 1}
   m_enableVertexGradient: 1
   m_colorMode: 3
   m_fontColorGradient:
@@ -984,7 +984,7 @@ MonoBehaviour:
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
   m_fontSizeMax: 72
-  m_fontStyle: 0
+  m_fontStyle: 1
   m_HorizontalAlignment: 2
   m_VerticalAlignment: 512
   m_textAlignment: 65535
@@ -1825,10 +1825,11 @@ MonoBehaviour:
   jumpHeight: 1.1
   jumpDuration: 0.45
   idleJumpInterval: 1.2
+  jumpAccelerationExponent: 0.7
   rankLabels: []
-  winnerBannerPanel: {fileID: 348653508}
+  winnerBannerPanel: {fileID: 446129396}
   winnerText: {fileID: 1177222307}
-  winnerTextFormat: GANADOR {0}
+  winnerTextFormat: '{0}'
   winnerRevealDelay: 0.8
   animateBannerPop: 1
   winnerSound: {fileID: 8300000, guid: d4a048898e1ea104f83a7a39164a214a, type: 3}
