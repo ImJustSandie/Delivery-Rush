@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -47,12 +48,44 @@ public class CollectibleCounterUI : MonoBehaviour
     [SerializeField] private bool showFullLabel = false;
     [SerializeField] private string fullSuffix = " ¡Lleno!";
 
+    [Header("Animación al estar lleno (pulso)")]
+    [Tooltip("Si es true, el panel da un pulso de crecimiento + sacudida al llenarse y cada vez que se intenta recoger un item con el inventario lleno.")]
+    [SerializeField] private bool fullPanelAnimation = true;
+    [Tooltip("Cuánto crece el panel en el pulso (1 = sin cambio). Ej: 1.12 = 12% más grande.")]
+    [SerializeField] private float fullPulseScale = 1.12f;
+    [Tooltip("Duración de cada pulso (segundos).")]
+    [SerializeField] private float fullPulseDuration = 0.35f;
+    [Tooltip("Intensidad de la sacudida en píxeles (desplazamiento máximo alrededor de la posición normal).")]
+    [SerializeField] private float fullShakeStrength = 6f;
+    [Tooltip("RectTransform que se anima. Si se deja vacío se usa el del panelImage (el panel completo con su texto).")]
+    [SerializeField] private RectTransform fullPulseTarget;
+
+    [Header("Mensaje al rechazar (maleta llena)")]
+    [Tooltip("Si es true, en cada pulso (al llenarse o al intentar recoger estando lleno) aparece un mensaje sobre/bajo el panel.")]
+    [SerializeField] private bool showFullMessage = true;
+    [Tooltip("Texto a mostrar en cada temblor.")]
+    [SerializeField] private string fullMessage = "Maleta llena";
+    [Tooltip("TMP_Text del mensaje. Si se deja vacío se crea automáticamente en runtime como hijo del panel.")]
+    [SerializeField] private TMP_Text fullMessageText;
+    [Tooltip("Desplazamiento del mensaje respecto al centro del panel (en coordenadas locales del panel).")]
+    [SerializeField] private Vector2 fullMessageOffset = new Vector2(0f, -95f);
+    [Tooltip("Tamaño de fuente del mensaje.")]
+    [SerializeField] private float fullMessageFontSize = 42f;
+    [Tooltip("Color del mensaje (el alfa se anima con el pulso).")]
+    [SerializeField] private Color fullMessageColor = new Color(1f, 0.85f, 0.2f);
+
     private bool isSubscribed;
     private int lastShownCount = int.MinValue;
     private int lastShownScore = int.MinValue;
     private int lastShownMax = int.MinValue;
     private Color initialPanelColor;
     private bool hasCapturedPanelColor;
+
+    private Coroutine fullPulseRoutine;
+    private bool wasFull;
+    private Vector3 basePulseScale = Vector3.one;
+    private Vector2 basePulsePosition;
+    private bool hasBasePulseTransform;
 
     private void Awake()
     {
@@ -63,6 +96,8 @@ public class CollectibleCounterUI : MonoBehaviour
             FindPanelImage();
 
         CaptureInitialPanelColor();
+        CaptureFullPulseBase(FullPulseRect);
+        EnsureFullMessageText();
 
         if (counterText == null)
             Debug.LogWarning($"[CollectibleCounterUI] No se encontró TMP_Text en {name}. Asigna counterText en el Inspector.");
@@ -82,6 +117,12 @@ public class CollectibleCounterUI : MonoBehaviour
             FindPanelImage();
             CaptureInitialPanelColor();
         }
+
+        // Re-capturar el estado base del panel (por si el objeto cambió de escena/instancia).
+        hasBasePulseTransform = false;
+        wasFull = false;
+        CaptureFullPulseBase(FullPulseRect);
+        EnsureFullMessageText();
 
         // Validar de nuevo por si la escena se cargó con referencia inválida
         if (targetPlayer != null && !IsValidSceneReference(targetPlayer))
@@ -111,6 +152,8 @@ public class CollectibleCounterUI : MonoBehaviour
     {
         CancelInvoke(nameof(TryBindToLocalPlayer));
         Unsubscribe();
+        StopFullPulse();
+        wasFull = false;
     }
 
     private void TryBindToLocalPlayer()
@@ -187,6 +230,7 @@ public class CollectibleCounterUI : MonoBehaviour
         if (targetPlayer == null || isSubscribed) return;
         targetPlayer.CollectedCountChanged += OnCollectedChanged;
         targetPlayer.ScoreChanged += OnScoreChanged;
+        targetPlayer.CollectRejected += OnCollectRejected;
         isSubscribed = true;
     }
 
@@ -196,8 +240,12 @@ public class CollectibleCounterUI : MonoBehaviour
         {
             targetPlayer.CollectedCountChanged -= OnCollectedChanged;
             targetPlayer.ScoreChanged -= OnScoreChanged;
+            targetPlayer.CollectRejected -= OnCollectRejected;
         }
         isSubscribed = false;
+        // Sin jugador vinculado no hay estado "lleno": detener y restaurar el panel.
+        StopFullPulse();
+        wasFull = false;
     }
 
     private void OnCollectedChanged(int newCount)
@@ -208,6 +256,12 @@ public class CollectibleCounterUI : MonoBehaviour
     private void OnScoreChanged(int newScore)
     {
         RefreshUI();
+    }
+
+    /// <summary>El jugador intentó recoger un item con el inventario lleno: reproducir un pulso.</summary>
+    private void OnCollectRejected()
+    {
+        PlayFullPulse();
     }
 
     private void CaptureInitialPanelColor()
@@ -309,6 +363,151 @@ public class CollectibleCounterUI : MonoBehaviour
         {
             scoreText.text = string.Format(scoreFormat, score);
         }
+
+        RefreshFullPulse(isFull);
+    }
+
+    // ── Animación del panel cuando está lleno ────────────────────────────
+
+    /// <summary>RectTransform a animar: el asignado o, por defecto, el del panel (fondo + texto).</summary>
+    private RectTransform FullPulseRect
+    {
+        get
+        {
+            if (fullPulseTarget != null) return fullPulseTarget;
+            return panelImage != null ? panelImage.rectTransform : null;
+        }
+    }
+
+    private void CaptureFullPulseBase(RectTransform rect)
+    {
+        if (rect == null || hasBasePulseTransform) return;
+        basePulseScale = rect.localScale;
+        basePulsePosition = rect.anchoredPosition;
+        hasBasePulseTransform = true;
+    }
+
+    /// <summary>
+    /// Asegura que exista el TMP_Text del mensaje. Si no se asignó en el Inspector,
+    /// se crea en runtime como hijo del panel (así tiembla junto a él).
+    /// </summary>
+    private void EnsureFullMessageText()
+    {
+        if (!showFullMessage || fullMessageText != null) return;
+
+        RectTransform parent = FullPulseRect;
+        if (parent == null) return;
+
+        if (counterText == null)
+        {
+            Debug.LogWarning($"[CollectibleCounterUI] No se pudo crear el mensaje '{fullMessage}' en {name}: falta un TMP_Text de referencia para la fuente.");
+            return;
+        }
+
+        GameObject go = new GameObject("FullMessage", typeof(RectTransform), typeof(TextMeshProUGUI));
+        RectTransform rect = go.GetComponent<RectTransform>();
+        rect.SetParent(parent, false);
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.sizeDelta = new Vector2(600f, 80f);
+        rect.anchoredPosition = fullMessageOffset;
+
+        TextMeshProUGUI text = go.GetComponent<TextMeshProUGUI>();
+        text.font = counterText.font;
+        text.text = fullMessage;
+        text.fontSize = fullMessageFontSize;
+        text.alignment = TextAlignmentOptions.Center;
+        text.raycastTarget = false;
+
+        Color c = fullMessageColor;
+        c.a = 0f;
+        text.color = c;
+
+        fullMessageText = text;
+    }
+
+    /// <summary>Aplica el alfa del mensaje (0 = invisible), conservando el color configurado.</summary>
+    private void SetFullMessageAlpha(float alpha)
+    {
+        if (!showFullMessage || fullMessageText == null) return;
+        Color c = fullMessageColor;
+        c.a = Mathf.Clamp01(alpha);
+        fullMessageText.color = c;
+    }
+
+    /// <summary>Reproduce un pulso al pasar a "lleno"; al dejar de estarlo detiene y restaura el panel.</summary>
+    private void RefreshFullPulse(bool isFull)
+    {
+        if (wasFull == isFull) return;
+        wasFull = isFull;
+        if (isFull)
+            PlayFullPulse();
+        else
+            StopFullPulse();
+    }
+
+    /// <summary>Dispara un pulso de crecimiento + sacudida. Ignora el disparo si ya hay uno en curso.</summary>
+    private void PlayFullPulse()
+    {
+        if (!fullPanelAnimation || !isActiveAndEnabled) return;
+        if (fullPulseRoutine != null) return;
+        RectTransform rect = FullPulseRect;
+        if (rect == null) return;
+        CaptureFullPulseBase(rect);
+        EnsureFullMessageText();
+        fullPulseRoutine = StartCoroutine(FullPanelPulseRoutine(rect));
+    }
+
+    private void StopFullPulse()
+    {
+        if (fullPulseRoutine != null)
+        {
+            StopCoroutine(fullPulseRoutine);
+            fullPulseRoutine = null;
+        }
+        RectTransform rect = FullPulseRect;
+        if (hasBasePulseTransform && rect != null)
+        {
+            rect.localScale = basePulseScale;
+            rect.anchoredPosition = basePulsePosition;
+        }
+        SetFullMessageAlpha(0f);
+    }
+
+    /// <summary>
+    /// Un pulso: el panel crece hasta fullPulseScale con una pequeña sacudida y vuelve
+    /// exactamente al tamaño/posición base. Se dispara al llenarse o al intentar recoger
+    /// otro item estando lleno (una vez por contacto).
+    /// </summary>
+    private IEnumerator FullPanelPulseRoutine(RectTransform rect)
+    {
+        float duration = Mathf.Max(0.01f, fullPulseDuration);
+        float scaleFactor = Mathf.Max(1f, fullPulseScale);
+        Vector3 targetScale = basePulseScale * scaleFactor;
+
+        SetFullMessageAlpha(0f);
+
+        float t = 0f;
+        while (t < 1f)
+        {
+            t += Time.unscaledDeltaTime / duration;
+            float clamped = Mathf.Clamp01(t);
+            // Curva 0 → 1 → 0 para que el pulso suba y baje suavemente.
+            float pulse = Mathf.Sin(clamped * Mathf.PI);
+            rect.localScale = Vector3.LerpUnclamped(basePulseScale, targetScale, pulse);
+            float shake = fullShakeStrength * pulse;
+            float phase = clamped * Mathf.PI * 6f;
+            rect.anchoredPosition = basePulsePosition
+                + new Vector2(Mathf.Sin(phase) * shake, Mathf.Cos(phase * 0.7f) * shake * 0.5f);
+            SetFullMessageAlpha(pulse);
+            yield return null;
+        }
+
+        rect.localScale = basePulseScale;
+        rect.anchoredPosition = basePulsePosition;
+        SetFullMessageAlpha(0f);
+        fullPulseRoutine = null;
     }
 
 #if UNITY_EDITOR
@@ -321,6 +520,11 @@ public class CollectibleCounterUI : MonoBehaviour
             counterText = GetComponentInChildren<TMP_Text>(true);
         if (panelImage == null)
             FindPanelImage();
+        if (fullPulseScale < 1f) fullPulseScale = 1f;
+        if (fullPulseDuration <= 0f) fullPulseDuration = 0.35f;
+        if (fullShakeStrength < 0f) fullShakeStrength = 0f;
+        if (fullMessageFontSize <= 0f) fullMessageFontSize = 42f;
+        if (string.IsNullOrEmpty(fullMessage)) fullMessage = "Maleta llena";
         // Actualizar preview en editor si hay player en escena
         if (Application.isPlaying) RefreshUI();
     }

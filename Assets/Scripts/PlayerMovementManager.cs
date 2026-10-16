@@ -107,8 +107,14 @@ public class PlayerMovementManager : NetworkBehaviour
     public event Action<int> PowerUpUsed;
     public event Action PowerUpPromoted;
     public event Action PowerUpCleared;
+    /// <summary>Se invoca con true/false cuando el jugador local empieza/termina de estar congelado (para la imagen de pantalla completa).</summary>
+    public event Action<bool> FreezeOverlayChanged;
+    /// <summary>Se invoca en el jugador local al intentar recoger un item (cubo) con el inventario lleno. Una vez por contacto.</summary>
+    public event Action CollectRejected;
 
     public bool IsMoving { get; private set; }
+    /// <summary>True mientras la pantalla del jugador local debe mostrar la imagen de congelación.</summary>
+    public bool FreezeOverlayActive { get; private set; }
     // Nuevo: IsCarrying ahora refleja si lleva al menos 1 recolectable. Se mantiene compatibilidad con código antiguo basado en carriedInteractable.
     public bool IsCarrying => CollectedCount > 0 || carriedInteractable != null;
     public int CollectedCount => IsOfflineTutorial ? offlineCollected : collectedCount.Value;
@@ -219,6 +225,9 @@ public class PlayerMovementManager : NetworkBehaviour
 
     private float lastCollectAttemptTime;
     private const float CollectAttemptCooldown = 0.15f;
+    // Último cubo que provocó el aviso de "inventario lleno". Sirve para avisar
+    // una sola vez por contacto: no se repite mientras siga tocando el mismo item.
+    private InteractableCube lastRejectedContact;
 
     [Header("Scene Camera Settings")]
     [Tooltip("Nombre de la escena de Lobby donde la cámara del personaje debe permanecer desactivada.")]
@@ -362,9 +371,25 @@ public class PlayerMovementManager : NetworkBehaviour
     private void ApplyVisualEffectState(int visual)
     {
         PowerUpVisuals visuals = GetComponent<PowerUpVisuals>();
-        if (visuals == null) return;
-        visuals.SetBoostActive(visual == 1);
-        visuals.SetSlowActive(visual == 2);
+        if (visuals != null)
+        {
+            visuals.SetBoostActive(visual == 1);
+            visuals.SetSlowActive(visual == 2);
+        }
+        SetFreezeOverlay(visual == 2);
+    }
+
+    /// <summary>
+    /// Activa o desactiva la imagen de congelación en pantalla completa.
+    /// Solo reacciona en la pantalla del jugador local (owner en red, no-dummy en tutorial offline);
+    /// en los demás clientes y en el dummy no hace nada.
+    /// </summary>
+    private void SetFreezeOverlay(bool active)
+    {
+        if (IsDummy || (!IsOwner && !IsOfflineTutorial)) return;
+        if (FreezeOverlayActive == active) return;
+        FreezeOverlayActive = active;
+        FreezeOverlayChanged?.Invoke(active);
     }
 
     /// <summary>Activa el visual en red durante `duration` segundos (solo servidor).</summary>
@@ -414,6 +439,7 @@ public class PlayerMovementManager : NetworkBehaviour
         ClearSpeedEffectLocally();
         frozenUntil = 0f;
         CancelInvoke(nameof(ClearVisualEffectOffline));
+        SetFreezeOverlay(false);
         PowerUpVisuals visuals = GetComponent<PowerUpVisuals>();
         if (visuals != null)
         {
@@ -1002,7 +1028,18 @@ public class PlayerMovementManager : NetworkBehaviour
     /// </summary>
     private void TryCollectNearby()
     {
-        if (IsInventoryFull && !CanCarryPowerUp) return;
+        if (IsInventoryFull)
+        {
+            // Inventario lleno: avisar una vez por contacto con un item normal.
+            // Luego seguir solo si todavía hay espacio para power-ups.
+            NotifyRejectedCollectibleNearby();
+            if (!CanCarryPowerUp) return;
+        }
+        else
+        {
+            lastRejectedContact = null;
+        }
+
         if (Time.time - lastCollectAttemptTime < CollectAttemptCooldown) return;
 
         // Buscar colliders cercanos (tanto solid como trigger del recolectable)
@@ -1060,6 +1097,34 @@ public class PlayerMovementManager : NetworkBehaviour
             }
             break; // Un intento por cooldown
         }
+    }
+
+    /// <summary>
+    /// Estando el inventario lleno, detecta si hay un item normal (InteractableCube)
+    /// dentro del radio y avisa una vez por contacto. Si no hay ninguno, libera el
+    /// contacto para que al volver a tocar un item se avise de nuevo.
+    /// </summary>
+    private void NotifyRejectedCollectibleNearby()
+    {
+        Collider[] hits = Physics.OverlapSphere(transform.position + Vector3.up * 0.5f, collectRadius);
+        foreach (Collider hit in hits)
+        {
+            InteractableCube cube = hit.GetComponentInParent<InteractableCube>();
+            if (cube == null || cube.IsCollected) continue;
+            NotifyRejectedContact(cube);
+            return;
+        }
+        lastRejectedContact = null;
+    }
+
+    /// <summary>Avisa (una sola vez por contacto) que no se pudo recoger por inventario lleno.</summary>
+    private void NotifyRejectedContact(InteractableCube cube)
+    {
+        if (cube == null || IsDummy) return;
+        if (!IsOwner && !IsOfflineTutorial) return;
+        if (cube == lastRejectedContact) return;
+        lastRejectedContact = cube;
+        CollectRejected?.Invoke();
     }
 
     /// <summary>
