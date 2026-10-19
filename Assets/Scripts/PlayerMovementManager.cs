@@ -73,6 +73,12 @@ public class PlayerMovementManager : NetworkBehaviour
     [Range(0f, 1f)]
     [SerializeField] private float depositSoundVolume = 1f;
 
+    [Header("Haptica")]
+    [Tooltip("Duración en segundos de la vibración mediana al llenarse el inventario.")]
+    [SerializeField] private float inventoryFullVibrationDuration = 0.25f;
+    [Tooltip("Duración en segundos de la vibración leve al intentar recoger un item con el inventario lleno.")]
+    [SerializeField] private float fullInventoryBumpVibrationDuration = 0.1f;
+
     // ── Respaldo offline (tutorial sin red) ───────────────────────────────
     // Cuando TutorialManager.IsOfflineTutorial es true, las NetworkVariables /
     // NetworkList no se usan: el inventario vive en estos campos locales.
@@ -228,6 +234,7 @@ public class PlayerMovementManager : NetworkBehaviour
     // Último cubo que provocó el aviso de "inventario lleno". Sirve para avisar
     // una sola vez por contacto: no se repite mientras siga tocando el mismo item.
     private InteractableCube lastRejectedContact;
+    private float lastInventoryFullVibrationTime;
 
     [Header("Scene Camera Settings")]
     [Tooltip("Nombre de la escena de Lobby donde la cámara del personaje debe permanecer desactivada.")]
@@ -328,6 +335,25 @@ public class PlayerMovementManager : NetworkBehaviour
         CollectedCountChanged?.Invoke(current);
         RefreshCarryingState();
         PublishPlayerState(true);
+
+        // Vibracion mediana cuando el inventario local pasa de tener espacio a estar lleno
+        if (current > previous && current >= maxCollected && previous < maxCollected)
+            NotifyInventoryBecameFull();
+    }
+
+    /// <summary>
+    /// Vibracion mediana al completarse el inventario. Solo vibra en el
+    /// dispositivo del jugador local (owner en red, jugador del tutorial) y
+    /// tiene cooldown por si reinicios o sincronizaciones disparan la
+    /// transición dos veces.
+    /// </summary>
+    private void NotifyInventoryBecameFull()
+    {
+        if (IsDummy) return;
+        if (!IsOwner && !IsOfflineTutorial) return;
+        if (Time.time - lastInventoryFullVibrationTime < 1f) return;
+        lastInventoryFullVibrationTime = Time.time;
+        VibrationManager.Vibrate(VibrationStrength.Medium, inventoryFullVibrationDuration);
     }
 
     private void OnScoreChanged(int previous, int current)
@@ -1123,6 +1149,9 @@ public class PlayerMovementManager : NetworkBehaviour
         if (cube == null || IsDummy) return;
         if (!IsOwner && !IsOfflineTutorial) return;
         if (cube == lastRejectedContact) return;
+        // Vibracion leve al intentar recoger con el inventario lleno:
+        // el control de repeticion lo da el propio contacto (lastRejectedContact).
+        VibrationManager.Vibrate(VibrationStrength.Light, fullInventoryBumpVibrationDuration);
         lastRejectedContact = cube;
         CollectRejected?.Invoke();
     }
@@ -1437,6 +1466,11 @@ public class PlayerMovementManager : NetworkBehaviour
         if (allowed <= 0) return false;
         offlineCollected += allowed;
         CollectedCountChanged?.Invoke(offlineCollected);
+
+        // Vibracion mediana al llenar el inventario (respaldo offline del tutorial)
+        if (offlineCollected >= maxCollected)
+            NotifyInventoryBecameFull();
+
         RefreshCarryingState();
         PublishPlayerState(true);
         return true;
