@@ -4565,6 +4565,38 @@ PrefabInstance:
       propertyPath: closeSound
       value: 
       objectReference: {fileID: 8300000, guid: e9993fc0da2cd4d46a99de55c9d8c0f0, type: 3}
+    - target: {fileID: 2417084229472350546, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
+      propertyPath: noCoverFromScenes.Array.size
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 2417084229472350546, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
+      propertyPath: 'noCoverFromScenes.Array.data[1]'
+      value: CustomizationScene
+      objectReference: {fileID: 0}
+    - target: {fileID: 2417084229472350546, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
+      propertyPath: noCoverFromScenes.Array.data[0].sceneName
+      value: CustomizationScene
+      objectReference: {fileID: 0}
+    - target: {fileID: 2417084229472350546, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
+      propertyPath: noCoverFromScenes.Array.data[1].sceneName
+      value: ClientConnectScene
+      objectReference: {fileID: 0}
+    - target: {fileID: 2417084229472350546, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
+      propertyPath: noCoverFromScenes.Array.data[0].blockIncoming
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2417084229472350546, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
+      propertyPath: noCoverFromScenes.Array.data[0].blockOutgoing
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2417084229472350546, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
+      propertyPath: noCoverFromScenes.Array.data[1].blockIncoming
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2417084229472350546, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
+      propertyPath: noCoverFromScenes.Array.data[1].blockOutgoing
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 2473459815882466357, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
       propertyPath: m_Name
       value: Trancision

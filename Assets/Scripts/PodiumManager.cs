@@ -53,6 +53,8 @@ public class PodiumManager : MonoBehaviour
     [Header("Ranking UI (opcional)")]
     [Tooltip("Textos opcionales para mostrar nombre/puntos en cada podio. Index 0=1º")]
     [SerializeField] private TMP_Text[] rankLabels;
+    [Tooltip("Color FIJO de los textos de nombre/ranking y del anuncio de ganador en Podio (no varía por slot). #FAB8AB por defecto.")]
+    [SerializeField] private Color playerTextPodiumColor = new Color32(0xFA, 0xB8, 0xAB, 0xFF);
 
     [Header("Winner Announcement UI")]
     [Tooltip("Panel o contenedor del letrero de ganador.")]
@@ -237,11 +239,8 @@ public class PodiumManager : MonoBehaviour
                 int slotIndex = GetPlayerSlotIndex(pm);
                 int playerSlot = slotIndex + 1;
                 rankLabels[i].text = $"P{playerSlot}: {playerName}\nPuntos: {pm.Score}";
-
-                if (pm.TryGetComponent<LobbyPlayerDisplay>(out var display))
-                {
-                    rankLabels[i].color = display.GetSlotColor(slotIndex);
-                }
+                // Color fijo del nombre en Podio (#FAB8AB), sin variar por slot.
+                rankLabels[i].color = playerTextPodiumColor;
             }
         }
 
@@ -554,12 +553,8 @@ public class PodiumManager : MonoBehaviour
         if (winnerText != null)
         {
             winnerText.text = winnerAnnouncement;
-
-            if (winners.Count == 1 && winners[0].TryGetComponent<LobbyPlayerDisplay>(out var display))
-            {
-                int slotIndex = GetPlayerSlotIndex(winners[0]);
-                winnerText.color = display.GetSlotColor(slotIndex);
-            }
+            // Color fijo del nombre en Podio (#FAB8AB), sin variar por slot.
+            winnerText.color = playerTextPodiumColor;
         }
 
         if (winnerBannerPanel != null)

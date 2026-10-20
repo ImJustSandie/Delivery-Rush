@@ -161,6 +161,7 @@ MonoBehaviour:
   startPitch: 15
   dragSide: 2
   sideFraction: 0.5
+  dragZoneFraction: 0.6
   ignoreDragsOverUI: 1
   virtualMovePadObject: {fileID: 0}
   interactButtonObject: {fileID: 0}
@@ -579,10 +580,14 @@ MonoBehaviour:
   powerUpButton: {fileID: 0}
   depositSound: {fileID: 8300000, guid: fc43281d48d9f214ba13ac6b5229cd4f, type: 3}
   depositSoundVolume: 1
+  inventoryFullVibrationDuration: 0.25
+  fullInventoryBumpVibrationDuration: 0.1
   gravity: 0
   collectRadius: 1.5
   lobbySceneName: Lobby
   lockHeightInGame: 1
+  enforceFixedHeight: 1
+  fixedHeightY: 0.2
   gameSceneName: MainScene
   maxStepUpHeight: 0.5
   gameStepOffset: 0
@@ -609,6 +614,8 @@ MonoBehaviour:
   groundLayerMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  streetLayerName: Street
+  requireStreetGround: 1
   randomizeSpawn: 1
   useSpawnerVolumes: 1
   obstacleLayers:
@@ -616,6 +623,7 @@ MonoBehaviour:
     m_Bits: 64
   obstructionCheckHalfExtents: {x: 0.5, y: 1, z: 0.5}
   maxSpawnAttempts: 20
+  fixedSpawnInTutorial: 1
 --- !u!114 &4331026526238001430
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -750,6 +758,7 @@ MonoBehaviour:
   victoryParam: Victory
   defeatParam: Defeat
   speedThreshold: 0.1
+  disableRootMotion: 1
 --- !u!65 &6982503477977103952
 BoxCollider:
   m_ObjectHideFlags: 0

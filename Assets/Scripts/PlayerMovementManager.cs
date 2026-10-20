@@ -74,9 +74,9 @@ public class PlayerMovementManager : NetworkBehaviour
     [SerializeField] private float depositSoundVolume = 1f;
 
     [Header("Haptica")]
-    [Tooltip("Duración en segundos de la vibración mediana al llenarse el inventario.")]
+    [Tooltip("Duración en segundos de la vibración al llenarse el inventario.")]
     [SerializeField] private float inventoryFullVibrationDuration = 0.25f;
-    [Tooltip("Duración en segundos de la vibración leve al intentar recoger un item con el inventario lleno.")]
+    [Tooltip("Duración en segundos de la vibración al intentar recoger un item con el inventario lleno.")]
     [SerializeField] private float fullInventoryBumpVibrationDuration = 0.1f;
 
     // ── Respaldo offline (tutorial sin red) ───────────────────────────────
@@ -335,6 +335,8 @@ public class PlayerMovementManager : NetworkBehaviour
         CollectedCountChanged?.Invoke(current);
         RefreshCarryingState();
         PublishPlayerState(true);
+        // LOG TEMPORAL de diagnostico de vibraciones (quitar al terminar).
+        Debug.Log($"[VibrationManager] CollectedCount {previous} -> {current} (max {maxCollected}, owner={IsOwner}, offline={IsOfflineTutorial})");
 
         // Vibracion mediana cuando el inventario local pasa de tener espacio a estar lleno
         if (current > previous && current >= maxCollected && previous < maxCollected)
@@ -349,11 +351,24 @@ public class PlayerMovementManager : NetworkBehaviour
     /// </summary>
     private void NotifyInventoryBecameFull()
     {
-        if (IsDummy) return;
-        if (!IsOwner && !IsOfflineTutorial) return;
-        if (Time.time - lastInventoryFullVibrationTime < 1f) return;
+        if (IsDummy)
+        {
+            Debug.Log("[VibrationManager] Full skip: es dummy del tutorial");
+            return;
+        }
+        if (!IsOwner && !IsOfflineTutorial)
+        {
+            Debug.Log("[VibrationManager] Full skip: no soy owner ni offline");
+            return;
+        }
+        if (Time.time - lastInventoryFullVibrationTime < 1f)
+        {
+            Debug.Log("[VibrationManager] Full skip: cooldown de 1s");
+            return;
+        }
         lastInventoryFullVibrationTime = Time.time;
-        VibrationManager.Vibrate(VibrationStrength.Medium, inventoryFullVibrationDuration);
+        Debug.Log("[VibrationManager] Inventario local se llena: disparando vibracion");
+        VibrationManager.Vibrate(inventoryFullVibrationDuration);
     }
 
     private void OnScoreChanged(int previous, int current)
@@ -690,8 +705,8 @@ public class PlayerMovementManager : NetworkBehaviour
             {
                 string currentScene = scene.name;
                 bool inLobby = (currentScene == lobbySceneName);
-                bool inPodium = string.Equals(currentScene, "Podio");
-                bool enableCtrl = !inLobby && (IsGameplayScene(currentScene) || inPodium);
+                // El control tactil de camara solo vive en la escena de juego o tutorial.
+                bool enableCtrl = !inLobby && IsGameplayScene(currentScene);
                 camController.enabled = enableCtrl;
                 if (enableCtrl) camController.SetTarget(transform);
             }
@@ -1151,7 +1166,8 @@ public class PlayerMovementManager : NetworkBehaviour
         if (cube == lastRejectedContact) return;
         // Vibracion leve al intentar recoger con el inventario lleno:
         // el control de repeticion lo da el propio contacto (lastRejectedContact).
-        VibrationManager.Vibrate(VibrationStrength.Light, fullInventoryBumpVibrationDuration);
+        Debug.Log("[VibrationManager] Rechazo por inventario lleno: disparando vibracion");
+        VibrationManager.Vibrate(fullInventoryBumpVibrationDuration);
         lastRejectedContact = cube;
         CollectRejected?.Invoke();
     }

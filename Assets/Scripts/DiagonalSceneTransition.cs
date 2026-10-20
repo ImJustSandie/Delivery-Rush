@@ -69,8 +69,8 @@ public class DiagonalSceneTransition : MonoBehaviour
     [Header("Network Pre-Cover")]
     [Tooltip("Margen extra (segundos) que el servidor espera tras su propio cierre para dar tiempo a que los clientes terminen su animacion de cierre antes de cargar la escena.")]
     [SerializeField] private float clientCoverMargin = 0.6f;
-    [Tooltip("Escenas de ORIGEN cuyas cargas de red entrantes no muestran transicion (corte directo). Vacia = todos los saltos muestran transicion. Ej: si el boton de Conectar ya cubre la pantalla, no hace falta omitir nada.")]
-    [SerializeField] private System.Collections.Generic.List<string> noCoverFromScenes = new System.Collections.Generic.List<string>();
+    [Tooltip("Escenas sin transicion. Cada entrada: 'Block Outgoing' bloquea al SALIR de la escena (origen), 'Block Incoming' bloquea al LLEGAR a ella (destino). Cualquier salto bloqueado es un corte directo: sin animacion de cierre ni de apertura y sin sonidos.")]
+    [SerializeField] private System.Collections.Generic.List<NoCoverSceneEntry> noCoverFromScenes = new System.Collections.Generic.List<NoCoverSceneEntry>();
 
     public bool IsTransitioning { get; private set; }
     public bool IsClosed { get; private set; }
@@ -194,7 +194,9 @@ public class DiagonalSceneTransition : MonoBehaviour
         // El servidor ya se cubrio con su propia animacion de cierre.
         if (pendingOpenAfterLoad) return;
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer) return;
-        if (TrySkipCoverFromHere()) return;
+        // Origen bloqueado al salir (Block Outgoing) o destino bloqueado al
+        // llegar (Block Incoming): corte directo, sin cubrir.
+        if (TrySkipCoverFromHere(sceneName)) return;
         if (IsClosed) return;
         SetClosedImmediate();
         PlayCloseSound();
@@ -216,26 +218,31 @@ public class DiagonalSceneTransition : MonoBehaviour
     }
 
     /// <summary>
-    /// Si la escena activa (origen del salto de red) esta en noCoverFromScenes,
-    /// desactiva la transicion para este salto: garantiza pantalla abierta, sin
-    /// sonido, y marca skipCoverOnce para que el OnSceneLoaded posterior tampoco
-    /// cubra. Retorna true cuando se omitio.
+    /// Comprueba si este salto debe omitirse por completo (corte directo).
+    /// Se omite cuando la escena de ORIGEN tiene 'Block Outgoing' o la de
+    /// DESTINO tiene 'Block Incoming' en noCoverFromScenes. Si se omite,
+    /// garantiza pantalla abierta, sin sonido, y marca skipCoverOnce para que
+    /// el OnSceneLoaded posterior tampoco cubra ni anime la apertura.
+    /// destinationSceneName puede ser null cuando aun no se conoce el destino.
     /// </summary>
-    private bool TrySkipCoverFromHere()
+    private bool TrySkipCoverFromHere(string destinationSceneName = null)
     {
-        if (!IsSkipSourceScene(SceneManager.GetActiveScene().name)) return false;
+        if (!IsSkipSourceScene(SceneManager.GetActiveScene().name)
+            && !IsSkipDestinationScene(destinationSceneName)) return false;
         skipCoverOnce = true;
         SetOpenImmediate();
         return true;
     }
 
+    /// <summary>ORIGEN del salto con 'Block Outgoing' (sin animacion al salir).</summary>
     private bool IsSkipSourceScene(string sceneName)
     {
         if (string.IsNullOrEmpty(sceneName) || noCoverFromScenes == null) return false;
-        foreach (string entry in noCoverFromScenes)
+        foreach (NoCoverSceneEntry entry in noCoverFromScenes)
         {
-            if (!string.IsNullOrEmpty(entry)
-                && string.Equals(entry.Trim(), sceneName.Trim(), System.StringComparison.OrdinalIgnoreCase))
+            if (entry != null
+                && entry.blockOutgoing
+                && MatchesSceneName(entry.sceneName, sceneName))
             {
                 return true;
             }
@@ -243,17 +250,43 @@ public class DiagonalSceneTransition : MonoBehaviour
         return false;
     }
 
+    /// <summary>DESTINO del salto con 'Block Incoming' (sin animacion al llegar).</summary>
+    private bool IsSkipDestinationScene(string sceneName)
+    {
+        if (string.IsNullOrEmpty(sceneName) || noCoverFromScenes == null) return false;
+        foreach (NoCoverSceneEntry entry in noCoverFromScenes)
+        {
+            if (entry != null
+                && entry.blockIncoming
+                && MatchesSceneName(entry.sceneName, sceneName))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool MatchesSceneName(string entrySceneName, string sceneName)
+    {
+        if (string.IsNullOrEmpty(entrySceneName) || string.IsNullOrEmpty(sceneName)) return false;
+        return string.Equals(entrySceneName.Trim(), sceneName.Trim(), System.StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Aviso previo del servidor: un cambio de escena con animacion va a empezar.
     /// Los clientes reproducen su propia animacion de cierre (wipe diagonal +
     /// sonido) para que vean lo mismo que el host en vez del corte seco.
+    /// El mensaje incluye la escena de destino para que el cliente pueda
+    /// omitir salto si origen o destino estan bloqueados en noCoverFromScenes.
     /// El servidor no necesita este mensaje (el maneja su propio cierre).
     /// </summary>
     private void HandlePreCloseMessage(ulong senderClientId, FastBufferReader messagePayload)
     {
         if (Instance != null && Instance != this) return;
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer) return;
-        if (IsSkipSourceScene(SceneManager.GetActiveScene().name)) return;
+        // Leer el destino de la escena enviado por el servidor.
+        messagePayload.ReadValueSafe(out string destinationScene);
+        if (TrySkipCoverFromHere(destinationScene)) return;
         if (IsClosed || IsTransitioning) return;
         Close();
     }
@@ -263,15 +296,15 @@ public class DiagonalSceneTransition : MonoBehaviour
     /// animado, para que cubran su pantalla en paralelo. Sin red o sin ser
     /// servidor, no hace nada.
     /// </summary>
-    private void BroadcastPreClose()
+    private void BroadcastPreClose(string destinationSceneName)
     {
         NetworkManager netManager = NetworkManager.Singleton;
         if (netManager == null || !netManager.IsListening || !netManager.IsServer) return;
         if (netManager.CustomMessagingManager == null) return;
-        FastBufferWriter writer = new FastBufferWriter(1, Allocator.Temp);
+        FastBufferWriter writer = new FastBufferWriter(256, Allocator.Temp);
         try
         {
-            writer.WriteByteSafe(0);
+            writer.WriteValueSafe(destinationSceneName ?? "");
             netManager.CustomMessagingManager.SendNamedMessageToAll(
                 PreCloseMessageName, writer, NetworkDelivery.ReliableSequenced);
         }
@@ -422,6 +455,12 @@ public class DiagonalSceneTransition : MonoBehaviour
         }
         else if (coverExternalLoads)
         {
+            if (IsSkipDestinationScene(scene.name))
+            {
+                // Destino con 'Block Incoming': corte directo, sin abrir animado.
+                SetOpenImmediate();
+                return;
+            }
             // Scene loaded directly without transition: snap covered, then open.
             SetClosedImmediate();
             Open();
@@ -486,6 +525,17 @@ public class DiagonalSceneTransition : MonoBehaviour
         if (string.IsNullOrEmpty(sceneName))
         {
             Debug.LogWarning("[DiagonalSceneTransition] Empty scene name, ignoring request.");
+            return;
+        }
+
+        // Origen con 'Block Outgoing' o destino con 'Block Incoming':
+        // corte directo. Sin animacion de cierre, sin cargar cubierto,
+        // sin apertura y sin sonidos en el destino.
+        if (IsSkipSourceScene(SceneManager.GetActiveScene().name)
+            || IsSkipDestinationScene(sceneName))
+        {
+            skipCoverOnce = true;
+            LoadSceneInternal(sceneName);
             return;
         }
 
@@ -605,8 +655,9 @@ public class DiagonalSceneTransition : MonoBehaviour
         pendingOpenAfterLoad = true;
         SetCanvasVisible(true);
         // Avisar primero para que los clientes animen su cierre en paralelo
-        // al nuestro (ver HandlePreCloseMessage).
-        BroadcastPreClose();
+        // al nuestro (ver HandlePreCloseMessage), enviando el destino para que
+        // el cliente pueda omitir el salto si esta bloqueado.
+        BroadcastPreClose(sceneName);
         PlayCloseSound();
 
         if (!IsClosed)
@@ -790,4 +841,20 @@ public class SceneCoverExtension
 {
     public string sceneName = "Lobby";
     public float extraDelay = 0.5f;
+}
+
+/// <summary>
+/// Escena cuya transicion se omite (corte directo: sin animacion de cierre
+/// ni de apertura y sin sonidos). 'blockOutgoing' aplica al salir de la
+/// escena (origen del salto) y 'blockIncoming' al llegar a ella (destino).
+/// </summary>
+[System.Serializable]
+public class NoCoverSceneEntry
+{
+    [Tooltip("Nombre exacto de la escena (sin distingir mayusculas).")]
+    public string sceneName = "";
+    [Tooltip("Bloquear Salida: al SALIR de esta escena el salto no anima (corte directo).")]
+    public bool blockOutgoing = true;
+    [Tooltip("Bloquear Entrada: al LLEGAR a esta escena el salto no anima (corte directo).")]
+    public bool blockIncoming = true;
 }

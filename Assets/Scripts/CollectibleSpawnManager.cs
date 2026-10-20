@@ -61,6 +61,8 @@ public class CollectibleSpawnManager : MonoBehaviour
     [SerializeField] private Vector3 obstructionCheckHalfExtents = new Vector3(0.4f, 0.4f, 0.4f);
     [Tooltip("Número máximo de posiciones aleatorias a probar antes de rendirse y no spawnear (evita spawnear dentro de edificios/obstáculos).")]
     [SerializeField] private int maxSpawnAttempts = 10;
+    [Tooltip("Capas cuyos TRIGGERS también bloquean el spawn (ej. volumen invisible de zona prohibida con IsTrigger activado). Los triggers de los CollectibleSpawner siempre se ignoran.")]
+    [SerializeField] private LayerMask blockerTriggerLayers = 1 << 6; // Capa 6 = Obstacles (ver TagManager.asset)
 
     private readonly HashSet<InteractableCube> trackedInstances = new HashSet<InteractableCube>();
     private readonly HashSet<PowerUpCube> trackedPowerUps = new HashSet<PowerUpCube>();
@@ -289,9 +291,12 @@ public class CollectibleSpawnManager : MonoBehaviour
 
     /// <summary>
     /// Devuelve true si la posición cae dentro de un Collider sólido (no Trigger)
-    /// de las <see cref="obstacleLayers"/>. Usa OverlapBox con
-    /// <see cref="QueryTriggerInteraction.Ignore"/> para que las hitbox triggers
-    /// de los spawners no bloqueen el spawn.
+    /// de las <see cref="obstacleLayers"/>, o dentro de un Trigger de las
+    /// <see cref="blockerTriggerLayers"/> (volumen invisible de zona prohibida).
+    /// La primera pasada usa <see cref="QueryTriggerInteraction.Ignore"/> para que
+    /// las hitbox triggers de los spawners no bloqueen el spawn; la segunda pasa
+    /// explorando triggers solo de <see cref="blockerTriggerLayers"/>, excluyendo
+    /// cualquier collider que pertenezca a un <see cref="CollectibleSpawner"/>.
     /// </summary>
     public bool IsPositionBlocked(Vector3 position)
     {
@@ -301,7 +306,32 @@ public class CollectibleSpawnManager : MonoBehaviour
             Quaternion.identity,
             obstacleLayers,
             QueryTriggerInteraction.Ignore);
-        return hits != null && hits.Length > 0;
+        if (hits != null && hits.Length > 0) return true;
+
+        return IsTriggerBlocked(position);
+    }
+
+    /// <summary>Segunda pasada: triggers de <see cref="blockerTriggerLayers"/> también bloquean el spawn.</summary>
+    private bool IsTriggerBlocked(Vector3 position)
+    {
+        if (blockerTriggerLayers == 0) return false;
+
+        Collider[] triggerHits = Physics.OverlapBox(
+            position,
+            obstructionCheckHalfExtents,
+            Quaternion.identity,
+            blockerTriggerLayers,
+            QueryTriggerInteraction.Collide);
+        if (triggerHits == null) return false;
+
+        foreach (Collider hit in triggerHits)
+        {
+            if (hit == null) continue;
+            // Las hitbox de los spawners son triggers: nunca cuentan como obstáculo.
+            if (hit.GetComponent<CollectibleSpawner>() != null) continue;
+            return true;
+        }
+        return false;
     }
 
     /// <summary>

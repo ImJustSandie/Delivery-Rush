@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Manifest principal del jugador Android.
+     Basado en la plantilla por defecto de Unity 6000.3.11f1
+     (PlaybackEngines/AndroidPlayer/Apk/LauncherManifest.xml).
+     NOTA: usando un Main Manifest custom, Unity ya NO inyecta la actividad
+     del launcher: hay que declararla (UnityPlayerGameActivity con el
+     intent-filter MAIN/LAUNCHER), con los mismos atributos que Unity
+     generaba en el manifest merged de la build anterior.
+     Añadido: permiso android.permission.VIBRATE requerido por el
+     servicio Vibrator usado por VibrationManager (vibraciones del juego). -->
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:installLocation="preferExternal">
+
+    <!-- Requerido para que el servicio Vibrator permita vibrar el dispositivo -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <supports-screens
+        android:smallScreens="true"
+        android:normalScreens="true"
+        android:largeScreens="true"
+        android:xlargeScreens="true"
+        android:anyDensity="true"/>
+
+    <application android:label="@string/app_name"
+                 android:icon="@mipmap/app_icon">
+
+        <!-- Actividad del launcher generada por Unity 6 (GameActivity).
+             Copiada del manifest merged de la ultima build funcional. -->
+        <activity
+            android:name="com.unity3d.player.UnityPlayerGameActivity"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale|layoutDirection|density"
+            android:enabled="true"
+            android:exported="true"
+            android:hardwareAccelerated="false"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:screenOrientation="landscape"
+            android:theme="@style/BaseUnityGameActivityTheme">
+            <intent-filter>
+                <category android:name="android.intent.category.LAUNCHER" />
+                <action android:name="android.intent.action.MAIN" />
+            </intent-filter>
+
+            <meta-data
+                android:name="unityplayer.UnityActivity"
+                android:value="true" />
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="game" />
+            <meta-data
+                android:name="WindowManagerPreference:FreeformWindowSize"
+                android:value="@string/FreeformWindowSize_maximize" />
+            <meta-data
+                android:name="WindowManagerPreference:FreeformWindowOrientation"
+                android:value="@string/FreeformWindowOrientation_landscape" />
+            <meta-data
+                android:name="notch_support"
+                android:value="true" />
+
+            <layout
+                android:minHeight="300px"
+                android:minWidth="400px" />
+        </activity>
+    </application>
+</manifest>

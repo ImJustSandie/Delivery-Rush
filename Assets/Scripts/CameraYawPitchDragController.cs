@@ -27,8 +27,10 @@ public class CameraYawPitchDragController : MonoBehaviour
     [SerializeField] private float startPitch = 15f;
 
     [Header("Drag Zone")]
-    [SerializeField] private DragScreenSide dragSide = DragScreenSide.Left;
+    [SerializeField] private DragScreenSide dragSide = DragScreenSide.Full;
     [SerializeField] [Range(0.1f, 1f)] private float sideFraction = 0.5f;
+    [Tooltip("Fraccion horizontal de pantalla donde se permite iniciar el drag de camara (juego en horizontal). 0.75 = solo el 75% derecho; el 25% izquierdo queda reservado para el virtual pad.")]
+    [SerializeField] [Range(0.1f, 1f)] private float dragZoneFraction = 0.75f;
     [SerializeField] private bool ignoreDragsOverUI = true;
 
     [Header("UI Filtering")]
@@ -43,17 +45,40 @@ public class CameraYawPitchDragController : MonoBehaviour
     private float pitch;
     private bool draggingMouse;
     private int activeTouchId = -1;
+    private bool inGameplayScene;
 
     private void OnEnable()
     {
         EnhancedTouch.EnhancedTouchSupport.Enable();
+        UnityEngine.SceneManagement.SceneManager.activeSceneChanged += OnActiveSceneChanged;
+        RefreshSceneGate();
     }
 
     private void OnDisable()
     {
         EnhancedTouch.EnhancedTouchSupport.Disable();
+        UnityEngine.SceneManagement.SceneManager.activeSceneChanged -= OnActiveSceneChanged;
         draggingMouse = false;
         activeTouchId = -1;
+    }
+
+    private void OnActiveSceneChanged(UnityEngine.SceneManagement.Scene previous, UnityEngine.SceneManagement.Scene next)
+    {
+        RefreshSceneGate();
+    }
+
+    /// <summary>
+    /// El control solo opera en la escena de juego (MainScene) o el tutorial.
+    /// En cualquier otra escena el input tactil y el reposicionado se apagan.
+    /// </summary>
+    private void RefreshSceneGate()
+    {
+        inGameplayScene = GameplaySceneUtility.IsActiveSceneGameplay();
+        if (!inGameplayScene)
+        {
+            draggingMouse = false;
+            activeTouchId = -1;
+        }
     }
 
     private void Awake()
@@ -75,12 +100,14 @@ public class CameraYawPitchDragController : MonoBehaviour
 
     private void Update()
     {
+        if (!inGameplayScene) return;
         HandleMouseDrag();
         HandleTouchDrag();
     }
 
     private void LateUpdate()
     {
+        if (!inGameplayScene) return;
         UpdateCameraTransform();
     }
 
@@ -152,6 +179,12 @@ public class CameraYawPitchDragController : MonoBehaviour
 
     private bool IsInDragZone(Vector2 screenPos)
     {
+        // Zona horizontal (juego en pantallas apaisadas): el drag solo puede iniciar
+        // en el porcentaje derecho de la pantalla (con 0.75, el 25% izquierdo queda
+        // reservado para el virtual pad y otros controles de esa zona).
+        if (screenPos.x < Screen.width * (1f - dragZoneFraction))
+            return false;
+
         if (dragSide == DragScreenSide.Full) return true;
 
         float limit = Screen.width * sideFraction;

@@ -47,6 +47,8 @@ public class PlayerSpawnSetter : NetworkBehaviour
     [SerializeField] private Vector3 obstructionCheckHalfExtents = new Vector3(0.5f, 1f, 0.5f);
     [Tooltip("Número máximo de posiciones aleatorias a probar antes de rendirse (evita spawnear dentro de edificios/obstáculos).")]
     [SerializeField] private int maxSpawnAttempts = 20;
+    [Tooltip("Capas cuyos TRIGGERS también bloquean el spawn (ej. volumen invisible de zona prohibida con IsTrigger activado). Los triggers de los CollectibleSpawner siempre se ignoran.")]
+    [SerializeField] private LayerMask blockerTriggerLayers = 1 << 6; // Capa 6 = Obstacles (ver TagManager.asset)
 
     [Header("Tutorial Fixed Spawn")]
     [Tooltip("Si es true, en el tutorial offline el spawn es siempre el primer punto fijo en vez de aleatorio. No afecta a la partida en red.")]
@@ -352,8 +354,9 @@ public class PlayerSpawnSetter : NetworkBehaviour
 
     /// <summary>
     /// Devuelve true si la posición cae dentro de un Collider sólido (no Trigger)
-    /// de <see cref="obstacleLayers"/>. Misma lógica que los objetos
-    /// (<see cref="CollectibleSpawnManager.IsPositionBlocked"/>), con caja de tamaño de jugador.
+    /// de <see cref="obstacleLayers"/> (misma lógica que
+    /// <see cref="CollectibleSpawnManager.IsPositionBlocked"/>), o dentro de un
+    /// Trigger de <see cref="blockerTriggerLayers"/> (zona prohibida invisible).
     /// Los colliders de la capa Street nunca cuentan como obstáculo (es suelo válido).
     /// </summary>
     public bool IsPositionBlocked(Vector3 position)
@@ -364,12 +367,37 @@ public class PlayerSpawnSetter : NetworkBehaviour
             Quaternion.identity,
             obstacleLayers,
             QueryTriggerInteraction.Ignore);
-        if (hits == null || hits.Length == 0) return false;
-        int streetMask = ResolveStreetMask();
-        foreach (Collider hit in hits)
+        if (hits != null && hits.Length > 0)
+        {
+            int streetMask = ResolveStreetMask();
+            foreach (Collider hit in hits)
+            {
+                if (hit == null) continue;
+                if (streetMask != 0 && IsInMask(hit.gameObject.layer, streetMask)) continue;
+                return true;
+            }
+        }
+        return IsTriggerBlocked(position);
+    }
+
+    /// <summary>Segunda pasada: triggers de <see cref="blockerTriggerLayers"/> también bloquean el spawn.</summary>
+    private bool IsTriggerBlocked(Vector3 position)
+    {
+        if (blockerTriggerLayers == 0) return false;
+
+        Collider[] triggerHits = Physics.OverlapBox(
+            position,
+            obstructionCheckHalfExtents,
+            Quaternion.identity,
+            blockerTriggerLayers,
+            QueryTriggerInteraction.Collide);
+        if (triggerHits == null) return false;
+
+        foreach (Collider hit in triggerHits)
         {
             if (hit == null) continue;
-            if (streetMask != 0 && IsInMask(hit.gameObject.layer, streetMask)) continue;
+            // Las hitbox de los spawners son triggers: nunca cuentan como obstáculo.
+            if (hit.GetComponent<CollectibleSpawner>() != null) continue;
             return true;
         }
         return false;

@@ -1,44 +1,27 @@
 using UnityEngine;
 
 /// <summary>
-/// Tipos de fuerza de vibracion. Cada nivel mapea a una amplitud del motor
-/// (0 a 255 en Android); a mayor valor, mas fuerte vibra el celular.
-/// </summary>
-public enum VibrationStrength
-{
-    Light = 0,
-    Medium = 1,
-    Strong = 2
-}
-
-/// <summary>
 /// Utilidad generica de vibracion. Cualquier script puede llamarla sin
-/// instancia ni GameObject en escena, por ejemplo para:
-///   - Recoger un objeto:    VibrationManager.Vibrate(VibrationStrength.Light, 0.05f);
-///   - Impacto / power-up:   VibrationManager.Vibrate(VibrationStrength.Medium, 0.25f);
-///   - Golpe fuerte / derrota: VibrationManager.Vibrate(VibrationStrength.Strong, 0.7f);
+/// instancia ni GameObject en escena:
+///   - Aviso corto:   VibrationManager.Vibrate(0.1f);
+///   - Aviso normal:  VibrationManager.Vibrate(0.25f);
+///   - Aviso largo:   VibrationManager.Vibrate(0.7f);
+///
+/// No incluye niveles de fuerza a proposito: en varios equipos (ej. Honor)
+/// el motor no soporta control de amplitud y cualquier variacion de
+/// intensidad se ignora o la descarta el sistema. vibrar siempre con la
+/// llamada simple por duracion es compatible con todos los dispositivos.
 ///
 /// Comportamiento por plataforma:
-///   - Android: usa el servicio Vibrator nativo (JNI). Con control de amplitud
-///     respeta la fuerza elegida; si el motor no lo soporta, vibra a maxima
-///     intensidad el tiempo indicado.
-///   - iOS: usa Handheld.Vibrate (duracion fija del sistema, se ignora el tiempo).
-///   - Editor / escritorio: no hace nada (solo un log de debug opcional).
+///   - Android: usa el servicio Vibrator nativo con duracion en ms.
+///   - iOS: usa Handheld.Vibrate (duracion fija del sistema).
+///   - Editor / escritorio: no hace nada (solo log de diagnostico temporal).
 /// </summary>
 public static class VibrationManager
 {
     [Header("Vibration Settings")]
     [Tooltip("Activa o desactiva globalmente la vibracion del juego.")]
     public static bool Enabled = true;
-
-    [Tooltip("Amplitud (1-255) del nivel Light.")]
-    public static int LightAmplitude = 60;
-
-    [Tooltip("Amplitud (1-255) del nivel Medium.")]
-    public static int MediumAmplitude = 150;
-
-    [Tooltip("Amplitud (1-255) del nivel Strong.")]
-    public static int StrongAmplitude = 255;
 
     [Tooltip("Duracion por defecto en segundos si la llamada no especifica una.")]
     public static float DefaultDurationSeconds = 0.2f;
@@ -49,28 +32,26 @@ public static class VibrationManager
     /// Llamada generica de vibracion. Es la funcion que deben usar los demas
     /// sistemas del juego en cualquier apartado que necesite haptica.
     /// </summary>
-    /// <param name="strength">Tipo de fuerza: Light, Medium o Strong.</param>
     /// <param name="durationSeconds">Duracion en segundos (se clampa entre 0.01 y 5).</param>
-    public static void Vibrate(VibrationStrength strength, float durationSeconds = -1f)
+    public static void Vibrate(float durationSeconds = -1f)
     {
-        if (!Enabled) return;
+        if (!Enabled)
+        {
+            Debug.Log("[VibrationManager] Skip: Enabled=false");
+            return;
+        }
 
         float duration = durationSeconds > 0f ? durationSeconds : DefaultDurationSeconds;
         duration = Mathf.Clamp(duration, 0.01f, MaxDurationSeconds);
-
-        int amplitude = GetAmplitude(strength);
+        Debug.Log($"[VibrationManager] Vibrate: duracion={duration:0.00}s");
 
 #if UNITY_ANDROID && !UNITY_EDITOR
-        VibrateAndroid(duration, amplitude);
+        VibrateAndroid(duration);
 #elif UNITY_IOS && !UNITY_EDITOR
-        // iOS no expone control de amplitud ni duracion publicos; vibra con el
-        // patron corto fijo del sistema.
+        // iOS no expone duracion publica; vibra con el patron fijo del sistema.
         Handheld.Vibrate();
 #else
-        if (Debug.isDebugBuild)
-        {
-            Debug.Log($"[VibrationManager] Vibracion simulada: strength={strength}, amplitud={amplitude}, duracion={duration:0.00}s");
-        }
+        Debug.Log("[VibrationManager] Plataforma sin vibracion (Editor/PC): solo simulado.");
 #endif
     }
 
@@ -81,50 +62,41 @@ public static class VibrationManager
         using (var vibrator = GetAndroidVibrator())
         {
             if (vibrator == null) return;
-            vibrator.Call("cancel");
+            try
+            {
+                vibrator.Call("cancel");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[VibrationManager] Fallo al cancelar vibracion: {e}");
+            }
         }
 #endif
     }
 
-    private static int GetAmplitude(VibrationStrength strength)
-    {
-        switch (strength)
-        {
-            case VibrationStrength.Light: return Mathf.Clamp(LightAmplitude, 1, 255);
-            case VibrationStrength.Medium: return Mathf.Clamp(MediumAmplitude, 1, 255);
-            case VibrationStrength.Strong: return Mathf.Clamp(StrongAmplitude, 1, 255);
-            default: return MediumAmplitude;
-        }
-    }
-
 #if UNITY_ANDROID && !UNITY_EDITOR
-    private static void VibrateAndroid(float durationSeconds, int amplitude)
+    private static void VibrateAndroid(float durationSeconds)
     {
         int milliseconds = Mathf.CeilToInt(durationSeconds * 1000f);
 
         using (var vibrator = GetAndroidVibrator())
         {
-            if (vibrator == null) return;
+            if (vibrator == null)
+            {
+                Debug.LogWarning("[VibrationManager] VibrateAndroid aborta: vibrator null");
+                return;
+            }
 
             try
             {
-                if (vibrator.Call<bool>("hasVibrator") && vibrator.Call<bool>("hasAmplitudeControl"))
-                {
-                    using (var effectClass = new AndroidJavaClass("android.os.VibrationEffect"))
-                    using (var effect = effectClass.CallStatic<AndroidJavaObject>("createOneShot", milliseconds, amplitude))
-                    {
-                        vibrator.Call("vibrate", effect);
-                    }
-                }
-                else
-                {
-                    // Motor sin control de amplitud: vibra a maxima intensidad.
-                    vibrator.Call("vibrate", milliseconds);
-                }
+                // Llamada simple por duracion: todos los motores, incluso los sin
+                // control de amplitud (ej. Honor), la aceptan.
+                vibrator.Call("vibrate", milliseconds);
+                Debug.Log($"[VibrationManager] Vibrando: ms={milliseconds}");
             }
             catch (System.Exception e)
             {
-                Debug.LogWarning($"[VibrationManager] Fallo al vibrar en Android: {e.Message}");
+                Debug.LogWarning($"[VibrationManager] Fallo al vibrar en Android: {e}");
             }
         }
     }
@@ -134,35 +106,17 @@ public static class VibrationManager
         AndroidJavaObject vibrator = null;
         try
         {
+            // El servicio "vibrator" sigue funcionando en API 31+ (solo deprecated)
+            // y existe en todas las versiones anteriores.
             using (var playerClass = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
             using (var activity = playerClass.GetStatic<AndroidJavaObject>("currentActivity"))
             {
-                // Android 12+ (API 31): el servicio "vibrator" esta deprecated y
-                // se pide por VibratorManager. Si no existe, se usa el camino antiguo.
-                try
-                {
-                    using (var vibratorManager = activity.Call<AndroidJavaObject>("getSystemService", "vibrator_manager"))
-                    {
-                        if (vibratorManager != null)
-                        {
-                            vibrator = vibratorManager.Call<AndroidJavaObject>("getDefaultVibrator");
-                        }
-                    }
-                }
-                catch
-                {
-                    // API < 31: no hay VibratorManager.
-                }
-
-                if (vibrator == null)
-                {
-                    vibrator = activity.Call<AndroidJavaObject>("getSystemService", "vibrator");
-                }
+                vibrator = activity.Call<AndroidJavaObject>("getSystemService", "vibrator");
             }
         }
         catch (System.Exception e)
         {
-            Debug.LogWarning($"[VibrationManager] No se pudo obtener el Vibrator de Android: {e.Message}");
+            Debug.LogWarning($"[VibrationManager] No se pudo obtener el Vibrator de Android: {e}");
         }
 
         return vibrator;

@@ -29,6 +29,10 @@ public class LobbyPlayerDisplay : NetworkBehaviour
         new Color(1.0f, 0.85f, 0.2f, 1f)   // Jugador 4: Amarillo (#FFD933)
     };
 
+    [Header("Podium Name Color")]
+    [Tooltip("Color FIJO del nombre del jugador en la escena de Podio (no varía por slot). #FAB8AB por defecto.")]
+    [SerializeField] private Color podiumNameColor = new Color32(0xFA, 0xB8, 0xAB, 0xFF);
+
     [Header("Lobby Positioning")]
     [Tooltip("Nombre del objeto padre en el Lobby que contiene las posiciones de los slots.")]
     [SerializeField] private string lobbySlotsObjectName = "LobbySlots";
@@ -176,6 +180,8 @@ public class LobbyPlayerDisplay : NetworkBehaviour
     private void OnLoadComplete(ulong clientId, string sceneName, LoadSceneMode loadSceneMode)
     {
         UpdateScaleForCurrentScene(sceneName);
+        // Re-aplicar texto/color de nombre (color fijo #FAB8AB en Podio, color de slot en el resto).
+        UpdatePlayerLabel();
         if (sceneName == lobbySceneName)
         {
             if (IsServer && NetworkGameManager.Instance != null)
@@ -190,6 +196,8 @@ public class LobbyPlayerDisplay : NetworkBehaviour
     private void OnUnitySceneLoaded(Scene scene, LoadSceneMode mode)
     {
         UpdateScaleForCurrentScene(scene.name);
+        // Re-aplicar texto/color de nombre (color fijo #FAB8AB en Podio, color de slot en el resto).
+        UpdatePlayerLabel();
         if (scene.name == lobbySceneName)
         {
             if (IsServer && NetworkGameManager.Instance != null)
@@ -365,8 +373,10 @@ public class LobbyPlayerDisplay : NetworkBehaviour
             playerLabelText.text = string.Format(labelFormat, playerNumber);
         }
 
-        // Asignar el color correspondiente a la posición/slot del jugador
-        playerLabelText.color = GetSlotColor(slotIndex);
+        // En Podio el color del nombre es fijo (#FAB8AB); en el resto de escenas depende del slot.
+        playerLabelText.color = IsPodiumScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name)
+            ? podiumNameColor
+            : GetSlotColor(slotIndex);
     }
 
     /// <summary>

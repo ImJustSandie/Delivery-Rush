@@ -342,10 +342,10 @@ MonoBehaviour:
   startPitch: 15
   dragSide: 2
   sideFraction: 0.5
+  dragZoneFraction: 0.75
   ignoreDragsOverUI: 1
   virtualMovePadObject: {fileID: 0}
   interactButtonObject: {fileID: 0}
-  debugLogs: 1
   initializeFromCurrentTransform: 1
 --- !u!1 &6201794615766329114
 GameObject:
@@ -481,7 +481,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 517067881
+  GlobalObjectIdHash: 3900674081
   InScenePlacedSourceGlobalObjectIdHash: 3099992248
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -511,6 +511,7 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   actionsAsset: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   moveSpeed: 20
+  moveDeadzone: 0.15
   onInteract:
     m_PersistentCalls:
       m_Calls:
@@ -538,9 +539,19 @@ MonoBehaviour:
   powerUpEffectDuration: 5
   powerUpButtonEffect: 2
   powerUpButton: {fileID: 0}
+  depositSound: {fileID: 0}
+  depositSoundVolume: 1
+  inventoryFullVibrationDuration: 0.25
+  fullInventoryBumpVibrationDuration: 0.1
   gravity: 0
   collectRadius: 1.5
   lobbySceneName: Lobby
+  lockHeightInGame: 1
+  enforceFixedHeight: 1
+  fixedHeightY: 0.2
+  gameSceneName: MainScene
+  maxStepUpHeight: 0.5
+  gameStepOffset: 0
 --- !u!114 &6879259335654345081
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -564,6 +575,8 @@ MonoBehaviour:
   groundLayerMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  streetLayerName: Street
+  requireStreetGround: 1
   randomizeSpawn: 1
   useSpawnerVolumes: 1
   obstacleLayers:
@@ -571,6 +584,10 @@ MonoBehaviour:
     m_Bits: 4294967295
   obstructionCheckHalfExtents: {x: 0.5, y: 1, z: 0.5}
   maxSpawnAttempts: 20
+  blockerTriggerLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  fixedSpawnInTutorial: 0
 --- !u!114 &2534427879259421092
 MonoBehaviour:
   m_ObjectHideFlags: 0
