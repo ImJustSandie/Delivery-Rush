@@ -81,6 +81,10 @@ public class CollectibleCounterUI : MonoBehaviour
     [SerializeField] private float fullMessageFontSize = 42f;
     [Tooltip("Color del mensaje (el alfa se anima con el pulso).")]
     [SerializeField] private Color fullMessageColor = new Color(1f, 0.85f, 0.2f);
+    [Tooltip("Tiempo adicional en segundos que permanece visible el título después de que termina la animación del panel.")]
+    [SerializeField] private float fullMessageHoldDuration = 1.0f;
+    [Tooltip("Duración en segundos del desvanecido (fade out) del mensaje al expirar.")]
+    [SerializeField] private float fullMessageFadeOutDuration = 0.35f;
 
     [Header("Escala del texto al estar lleno")]
     [Tooltip("Escala final del mensaje 'Maleta llena' (1 = tamaño original de la fuente). Se aplica sobre el texto y además hereda el crecimiento del panel.")]
@@ -104,6 +108,7 @@ public class CollectibleCounterUI : MonoBehaviour
     private bool hasCapturedPanelColor;
 
     private Coroutine fullPulseRoutine;
+    private Coroutine fullMessageRoutine;
     private bool wasFull;
     private Vector3 basePulseScale = Vector3.one;
     private Vector2 basePulsePosition;
@@ -523,16 +528,24 @@ public class CollectibleCounterUI : MonoBehaviour
             StopFullPulse();
     }
 
-    /// <summary>Dispara un pulso de crecimiento + sacudida. Ignora el disparo si ya hay uno en curso.</summary>
+    /// <summary>Dispara un pulso de crecimiento + sacudida y muestra el mensaje que dura más tiempo.</summary>
     private void PlayFullPulse()
     {
         if (!fullPanelAnimation || !isActiveAndEnabled) return;
-        if (fullPulseRoutine != null) return;
         RectTransform rect = FullPulseRect;
         if (rect == null) return;
         CaptureFullPulseBase(rect);
         EnsureFullMessageText();
-        fullPulseRoutine = StartCoroutine(FullPanelPulseRoutine(rect));
+
+        if (fullPulseRoutine == null)
+            fullPulseRoutine = StartCoroutine(FullPanelPulseRoutine(rect));
+
+        if (showFullMessage)
+        {
+            if (fullMessageRoutine != null)
+                StopCoroutine(fullMessageRoutine);
+            fullMessageRoutine = StartCoroutine(FullMessageDisplayRoutine());
+        }
     }
 
     private void StopFullPulse()
@@ -541,6 +554,11 @@ public class CollectibleCounterUI : MonoBehaviour
         {
             StopCoroutine(fullPulseRoutine);
             fullPulseRoutine = null;
+        }
+        if (fullMessageRoutine != null)
+        {
+            StopCoroutine(fullMessageRoutine);
+            fullMessageRoutine = null;
         }
         RectTransform rect = FullPulseRect;
         if (hasBasePulseTransform && rect != null)
@@ -599,8 +617,6 @@ public class CollectibleCounterUI : MonoBehaviour
         Vector3 startScale = rect.localScale;
         Vector3 targetScale = startScale * scaleFactor;
 
-        SetFullMessageAlpha(0f);
-
         float t = 0f;
         while (t < 1f)
         {
@@ -613,14 +629,64 @@ public class CollectibleCounterUI : MonoBehaviour
             float phase = clamped * Mathf.PI * 6f;
             rect.anchoredPosition = basePulsePosition
                 + new Vector2(Mathf.Sin(phase) * shake, Mathf.Cos(phase * 0.7f) * shake * 0.5f);
-            SetFullMessageAlpha(pulse);
             yield return null;
         }
 
         rect.localScale = startScale;
         rect.anchoredPosition = basePulsePosition;
-        SetFullMessageAlpha(0f);
         fullPulseRoutine = null;
+    }
+
+    /// <summary>
+    /// Muestra el mensaje (ej. 'Estoy lleno' / 'Maleta llena'), manteniéndolo visible
+    /// durante la animación del panel más un tiempo adicional (fullMessageHoldDuration),
+    /// y luego lo desvanece suavemente.
+    /// </summary>
+    private IEnumerator FullMessageDisplayRoutine()
+    {
+        float startAlpha = fullMessageText != null ? fullMessageText.color.a : 0f;
+        float fadeInDuration = Mathf.Min(0.15f, fullPulseDuration * 0.5f);
+
+        // 1. Fade in inicial rápido
+        if (fadeInDuration > 0f && startAlpha < 1f)
+        {
+            float t = 0f;
+            while (t < fadeInDuration)
+            {
+                t += Time.unscaledDeltaTime;
+                float progress = Mathf.Clamp01(t / fadeInDuration);
+                SetFullMessageAlpha(Mathf.Lerp(startAlpha, 1f, progress));
+                yield return null;
+            }
+        }
+        SetFullMessageAlpha(1f);
+
+        // 2. Mantener visible durante el pulso del panel + tiempo adicional configurado
+        float remainingPulseTime = Mathf.Max(0f, fullPulseDuration - fadeInDuration);
+        float holdTime = remainingPulseTime + Mathf.Max(0f, fullMessageHoldDuration);
+        if (holdTime > 0f)
+        {
+            float t = 0f;
+            while (t < holdTime)
+            {
+                t += Time.unscaledDeltaTime;
+                yield return null;
+            }
+        }
+
+        // 3. Fade out suave
+        float fadeOutDuration = Mathf.Max(0.01f, fullMessageFadeOutDuration);
+        float elapsedFade = 0f;
+        while (elapsedFade < fadeOutDuration)
+        {
+            elapsedFade += Time.unscaledDeltaTime;
+            float progress = Mathf.Clamp01(elapsedFade / fadeOutDuration);
+            SetFullMessageAlpha(1f - progress);
+            yield return null;
+        }
+
+        SetFullMessageAlpha(0f);
+        fullMessageRoutine = null;
     }
 
 #if UNITY_EDITOR
@@ -640,6 +706,8 @@ public class CollectibleCounterUI : MonoBehaviour
         if (fullMessageFontSize <= 0f) fullMessageFontSize = 42f;
         if (fullMessageScale < 0.1f) fullMessageScale = 1f;
         if (fullColorWaveSpeed < 0.01f) fullColorWaveSpeed = 5f;
+        if (fullMessageHoldDuration < 0f) fullMessageHoldDuration = 0f;
+        if (fullMessageFadeOutDuration < 0f) fullMessageFadeOutDuration = 0f;
         if (string.IsNullOrEmpty(fullMessage)) fullMessage = "Maleta llena";
         // Actualizar preview en editor si hay player en escena
         if (Application.isPlaying) RefreshUI();
