@@ -55,6 +55,10 @@ public class CollectibleSpawnManager : MonoBehaviour
     [SerializeField] private float goldenNotifyFadeIn = 0.4f;
     [Tooltip("Duración del fade out de la imagen (segundos).")]
     [SerializeField] private float goldenNotifyFadeOut = 0.6f;
+    [Tooltip("Escala inicial al comenzar la animación del aviso dorado (ej. 0.2 = 20% de su tamaño).")]
+    [SerializeField] private float goldenNotifyStartScale = 0.2f;
+    [Tooltip("Factor de rebote elástico (overshoot) antes de asentarse en su tamaño normal (ej. 1.15 = 115%).")]
+    [SerializeField] private float goldenNotifyOvershootScale = 1.15f;
 
     [Header("Evento dorado (última fase de la partida)")]
     [Tooltip("Segundos restantes de partida a los que empieza el evento dorado. Ej: 20 = arranca faltando 20s para el final.")]
@@ -70,6 +74,10 @@ public class CollectibleSpawnManager : MonoBehaviour
     [SerializeField] private float goldenEventDuration = 3f;
     [Tooltip("Duración del fade out de la imagen del evento (segundos).")]
     [SerializeField] private float goldenEventFadeOut = 0.6f;
+    [Tooltip("Escala inicial al comenzar la animación del evento dorado (ej. 0.2 = 20% de su tamaño).")]
+    [SerializeField] private float goldenEventStartScale = 0.2f;
+    [Tooltip("Factor de rebote elástico (overshoot) del evento antes de asentarse en su tamaño normal (ej. 1.15 = 115%).")]
+    [SerializeField] private float goldenEventOvershootScale = 1.15f;
 
     [Header("Límites")]
     [Tooltip("Número máximo de instancias simultáneas en escena. No se generan más si se alcanza.")]
@@ -116,8 +124,14 @@ public class CollectibleSpawnManager : MonoBehaviour
     // ── Estado del aviso UI dorado ────────────────────────────────────────
     private Coroutine goldenNotificationRoutine;
     private CanvasGroup goldenNotificationGroup;
+    private Vector3 goldenNotificationBaseScale = Vector3.one;
+    private bool goldenNotificationBaseScaleCached;
+
     private Coroutine goldenEventFadeRoutine;
     private CanvasGroup goldenEventGroup;
+    private Vector3 goldenEventBaseScale = Vector3.one;
+    private bool goldenEventBaseScaleCached;
+
     private bool goldenEventActive;
     // Fallback cuando no hay MatchTimerManager (tutorial offline)
     private float fallbackMatchStartTime;
@@ -226,6 +240,7 @@ public class CollectibleSpawnManager : MonoBehaviour
         if (Instance == this) Instance = null;
     }
 
+
     private void Start()
     {
         if (NetworkManager.Singleton != null)
@@ -266,6 +281,21 @@ public class CollectibleSpawnManager : MonoBehaviour
         if (NetworkManager.Singleton != null)
         {
             NetworkManager.Singleton.OnServerStarted -= HandleServerStarted;
+        }
+
+        HideGoldenEventImage();
+        if (goldenNotificationRoutine != null)
+        {
+            StopCoroutine(goldenNotificationRoutine);
+            goldenNotificationRoutine = null;
+        }
+        if (goldenNotificationImage != null)
+        {
+            if (goldenNotificationBaseScaleCached)
+                goldenNotificationImage.rectTransform.localScale = goldenNotificationBaseScale;
+            if (goldenNotificationGroup != null)
+                goldenNotificationGroup.alpha = 0f;
+            goldenNotificationImage.gameObject.SetActive(false);
         }
     }
 
@@ -794,14 +824,20 @@ public class CollectibleSpawnManager : MonoBehaviour
     {
         if (goldenEventImage == null) return;
         if (!isActiveAndEnabled) return;
+        CacheBaseScales();
         if (goldenEventFadeRoutine != null)
+        {
             StopCoroutine(goldenEventFadeRoutine);
+            if (goldenEventBaseScaleCached)
+                goldenEventImage.rectTransform.localScale = goldenEventBaseScale;
+        }
         goldenEventFadeRoutine = StartCoroutine(GoldenEventFadeRoutine());
     }
 
     private System.Collections.IEnumerator GoldenEventFadeRoutine()
     {
         CanvasGroup group = EnsureCanvasGroup(goldenEventImage, ref goldenEventGroup);
+        CacheBaseScales();
         goldenEventImage.gameObject.SetActive(true);
         goldenEventGroup.interactable = false;
         goldenEventGroup.blocksRaycasts = false;
@@ -809,6 +845,7 @@ public class CollectibleSpawnManager : MonoBehaviour
         float fadeIn = Mathf.Max(0f, goldenEventFadeIn);
         float hold = Mathf.Max(0f, goldenEventDuration);
         float fadeOut = Mathf.Max(0f, goldenEventFadeOut);
+        RectTransform rt = goldenEventImage.rectTransform;
 
         if (fadeIn > 0f)
         {
@@ -816,11 +853,15 @@ public class CollectibleSpawnManager : MonoBehaviour
             while (t < fadeIn)
             {
                 t += Time.unscaledDeltaTime;
-                group.alpha = Mathf.Clamp01(t / fadeIn);
+                float progress = Mathf.Clamp01(t / fadeIn);
+                group.alpha = progress;
+                float scaleMul = EvaluatePopScale(progress, goldenEventStartScale, goldenEventOvershootScale);
+                rt.localScale = goldenEventBaseScale * scaleMul;
                 yield return null;
             }
         }
         group.alpha = 1f;
+        rt.localScale = goldenEventBaseScale;
 
         if (hold > 0f)
             yield return new WaitForSeconds(hold);
@@ -831,11 +872,15 @@ public class CollectibleSpawnManager : MonoBehaviour
             while (t < fadeOut)
             {
                 t += Time.unscaledDeltaTime;
-                group.alpha = 1f - Mathf.Clamp01(t / fadeOut);
+                float progress = Mathf.Clamp01(t / fadeOut);
+                group.alpha = 1f - progress;
+                float exitScaleMul = Mathf.Lerp(1f, 0.85f, progress);
+                rt.localScale = goldenEventBaseScale * exitScaleMul;
                 yield return null;
             }
         }
         group.alpha = 0f;
+        rt.localScale = goldenEventBaseScale;
         goldenEventImage.gameObject.SetActive(false);
         goldenEventFadeRoutine = null;
     }
@@ -848,12 +893,58 @@ public class CollectibleSpawnManager : MonoBehaviour
             StopCoroutine(goldenEventFadeRoutine);
             goldenEventFadeRoutine = null;
         }
-        if (goldenEventGroup == null) return;
-        goldenEventGroup.alpha = 0f;
-        goldenEventImage.gameObject.SetActive(false);
+        if (goldenEventImage != null)
+        {
+            if (goldenEventBaseScaleCached)
+                goldenEventImage.rectTransform.localScale = goldenEventBaseScale;
+            goldenEventImage.gameObject.SetActive(false);
+        }
+        if (goldenEventGroup != null)
+        {
+            goldenEventGroup.alpha = 0f;
+        }
     }
 
     // ── Utilidades ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Guarda la escala local configurada originalmente en el RectTransform de ambas imágenes.
+    /// </summary>
+    private void CacheBaseScales()
+    {
+        if (goldenNotificationImage != null && !goldenNotificationBaseScaleCached)
+        {
+            Vector3 s = goldenNotificationImage.rectTransform.localScale;
+            goldenNotificationBaseScale = (s != Vector3.zero) ? s : Vector3.one;
+            goldenNotificationBaseScaleCached = true;
+        }
+        if (goldenEventImage != null && !goldenEventBaseScaleCached)
+        {
+            Vector3 s = goldenEventImage.rectTransform.localScale;
+            goldenEventBaseScale = (s != Vector3.zero) ? s : Vector3.one;
+            goldenEventBaseScaleCached = true;
+        }
+    }
+
+    /// <summary>
+    /// Calcula la escala dinámica tipo 'pop / overshoot' (empieza pequeño, sobrepasa ligeramente y se asienta suavemente).
+    /// </summary>
+    private static float EvaluatePopScale(float progress, float startScale, float overshootScale)
+    {
+        progress = Mathf.Clamp01(progress);
+        if (progress < 0.7f)
+        {
+            float subT = progress / 0.7f;
+            float smooth = Mathf.Sin(subT * Mathf.PI * 0.5f);
+            return Mathf.Lerp(startScale, overshootScale, smooth);
+        }
+        else
+        {
+            float subT = (progress - 0.7f) / 0.3f;
+            float smooth = Mathf.Sin(subT * Mathf.PI * 0.5f);
+            return Mathf.Lerp(overshootScale, 1f, smooth);
+        }
+    }
 
     /// <summary>
     /// Prepara los CanvasGroup de ambas imágenes (aviso y evento): alpha 0 y sin bloquear raycasts.
@@ -861,15 +952,20 @@ public class CollectibleSpawnManager : MonoBehaviour
     /// </summary>
     private void PrepareGoldenNotification()
     {
+        CacheBaseScales();
         if (goldenNotificationImage != null)
         {
             CanvasGroup group = EnsureCanvasGroup(goldenNotificationImage, ref goldenNotificationGroup);
             group.alpha = 0f;
+            goldenNotificationImage.rectTransform.localScale = goldenNotificationBaseScale;
+            goldenNotificationImage.gameObject.SetActive(false);
         }
         if (goldenEventImage != null)
         {
             CanvasGroup group = EnsureCanvasGroup(goldenEventImage, ref goldenEventGroup);
             group.alpha = 0f;
+            goldenEventImage.rectTransform.localScale = goldenEventBaseScale;
+            goldenEventImage.gameObject.SetActive(false);
         }
     }
 
@@ -888,7 +984,7 @@ public class CollectibleSpawnManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Activa temporalmente la imagen de aviso con fade in, espera y fade out.
+    /// Activa temporalmente la imagen de aviso con fade in, escala pop dinámica, espera y fade out.
     /// Lo llaman los InteractableCubes dorados desde OnNetworkSpawn/local (funciona en servidor, clientes y offline).
     /// </summary>
     public void NotifyGoldenAppeared()
@@ -897,15 +993,21 @@ public class CollectibleSpawnManager : MonoBehaviour
         // Durante el evento dorado, los objetos dorados NO disparan esta notificación
         if (IsGoldenEventActive) return;
         if (!isActiveAndEnabled) return;
+        CacheBaseScales();
         EnsureCanvasGroup(goldenNotificationImage, ref goldenNotificationGroup);
         if (goldenNotificationRoutine != null)
+        {
             StopCoroutine(goldenNotificationRoutine);
+            if (goldenNotificationBaseScaleCached)
+                goldenNotificationImage.rectTransform.localScale = goldenNotificationBaseScale;
+        }
         goldenNotificationRoutine = StartCoroutine(GoldenNotificationFadeRoutine());
     }
 
     private IEnumerator GoldenNotificationFadeRoutine()
     {
         EnsureCanvasGroup(goldenNotificationImage, ref goldenNotificationGroup);
+        CacheBaseScales();
         goldenNotificationImage.gameObject.SetActive(true);
         goldenNotificationGroup.interactable = false;
         goldenNotificationGroup.blocksRaycasts = false;
@@ -913,6 +1015,7 @@ public class CollectibleSpawnManager : MonoBehaviour
         float fadeIn = Mathf.Max(0f, goldenNotifyFadeIn);
         float hold = Mathf.Max(0f, goldenNotifyDuration);
         float fadeOut = Mathf.Max(0f, goldenNotifyFadeOut);
+        RectTransform rt = goldenNotificationImage.rectTransform;
 
         if (fadeIn > 0f)
         {
@@ -920,11 +1023,15 @@ public class CollectibleSpawnManager : MonoBehaviour
             while (t < fadeIn)
             {
                 t += Time.unscaledDeltaTime;
-                goldenNotificationGroup.alpha = Mathf.Clamp01(t / fadeIn);
+                float progress = Mathf.Clamp01(t / fadeIn);
+                goldenNotificationGroup.alpha = progress;
+                float scaleMul = EvaluatePopScale(progress, goldenNotifyStartScale, goldenNotifyOvershootScale);
+                rt.localScale = goldenNotificationBaseScale * scaleMul;
                 yield return null;
             }
         }
         goldenNotificationGroup.alpha = 1f;
+        rt.localScale = goldenNotificationBaseScale;
 
         if (hold > 0f)
             yield return new WaitForSeconds(hold);
@@ -935,11 +1042,16 @@ public class CollectibleSpawnManager : MonoBehaviour
             while (t < fadeOut)
             {
                 t += Time.unscaledDeltaTime;
-                goldenNotificationGroup.alpha = 1f - Mathf.Clamp01(t / fadeOut);
+                float progress = Mathf.Clamp01(t / fadeOut);
+                goldenNotificationGroup.alpha = 1f - progress;
+                float exitScaleMul = Mathf.Lerp(1f, 0.85f, progress);
+                rt.localScale = goldenNotificationBaseScale * exitScaleMul;
                 yield return null;
             }
         }
         goldenNotificationGroup.alpha = 0f;
+        rt.localScale = goldenNotificationBaseScale;
+        goldenNotificationImage.gameObject.SetActive(false);
         goldenNotificationRoutine = null;
     }
 
@@ -962,10 +1074,14 @@ public class CollectibleSpawnManager : MonoBehaviour
         if (goldenNotifyDuration < 0f) goldenNotifyDuration = 0f;
         if (goldenNotifyFadeIn < 0f) goldenNotifyFadeIn = 0f;
         if (goldenNotifyFadeOut < 0f) goldenNotifyFadeOut = 0f;
+        if (goldenNotifyStartScale < 0f) goldenNotifyStartScale = 0f;
+        if (goldenNotifyOvershootScale < 1f) goldenNotifyOvershootScale = 1f;
         if (goldenEventStartRemaining < 0f) goldenEventStartRemaining = 0f;
         if (goldenEventFadeIn < 0f) goldenEventFadeIn = 0f;
         if (goldenEventDuration < 0f) goldenEventDuration = 0f;
         if (goldenEventFadeOut < 0f) goldenEventFadeOut = 0f;
+        if (goldenEventStartScale < 0f) goldenEventStartScale = 0f;
+        if (goldenEventOvershootScale < 1f) goldenEventOvershootScale = 1f;
         if (initialSpawnCount < 0) initialSpawnCount = 0;
         if (autoSpawnInterval < 0f) autoSpawnInterval = 0f;
         if (maxSpawnAttempts < 1) maxSpawnAttempts = 1;

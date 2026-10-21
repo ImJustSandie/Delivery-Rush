@@ -281,8 +281,8 @@ MonoBehaviour:
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4294967295
-  m_fontColor: {r: 1, g: 1, b: 1, a: 1}
+    rgba: 4294952362
+  m_fontColor: {r: 0.6650944, g: 0.7715656, b: 1, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
@@ -295,7 +295,7 @@ MonoBehaviour:
   m_tintAllSprites: 0
   m_StyleSheet: {fileID: 0}
   m_TextStyleHashCode: -1183493901
-  m_overrideHtmlColors: 0
+  m_overrideHtmlColors: 1
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
@@ -623,6 +623,9 @@ MonoBehaviour:
     m_Bits: 64
   obstructionCheckHalfExtents: {x: 0.5, y: 1, z: 0.5}
   maxSpawnAttempts: 20
+  blockerTriggerLayers:
+    serializedVersion: 2
+    m_Bits: 64
   fixedSpawnInTutorial: 1
 --- !u!114 &4331026526238001430
 MonoBehaviour:
@@ -691,6 +694,7 @@ MonoBehaviour:
   - {r: 1, g: 0.3534834, b: 0.2980392, a: 1}
   - {r: 0.25, g: 0.85, b: 0.4, a: 1}
   - {r: 1, g: 0.85, b: 0.2, a: 1}
+  podiumNameColor: {r: 0.98039216, g: 0.72156864, b: 0.67058825, a: 1}
   lobbySlotsObjectName: LobbySlots
   lobbySceneName: Lobby
   fallbackSlotOffset: 0
