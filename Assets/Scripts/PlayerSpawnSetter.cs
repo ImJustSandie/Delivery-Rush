@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -50,6 +52,37 @@ public class PlayerSpawnSetter : NetworkBehaviour
     [Tooltip("Capas cuyos TRIGGERS también bloquean el spawn (ej. volumen invisible de zona prohibida con IsTrigger activado). Los triggers de los CollectibleSpawner siempre se ignoran.")]
     [SerializeField] private LayerMask blockerTriggerLayers = 1 << 6; // Capa 6 = Obstacles (ver TagManager.asset)
 
+    [Header("Anti-Duplicate Spawn")]
+    [Tooltip("Distancia mínima (en metros) entre el punto de spawn de este jugador y el spawn de cualquier otro jugador. 0 = desactivado.")]
+    [SerializeField] private float minSpawnDistance = 3f;
+
+    // Registro del servidor: última posición de spawn asignada a cada cliente.
+    // Sirve para que dos jugadores nunca elijan el mismo punto (o puntos demasiado cercanos).
+    private static readonly Dictionary<ulong, Vector3> serverSpawnPositions = new Dictionary<ulong, Vector3>();
+    // Puntos hijos del contenedor SpawnPoints ya ocupados durante la escena/partida actual.
+    private static readonly HashSet<Transform> usedSpawnPointTransforms = new HashSet<Transform>();
+
+    [Header("Spawn Retry")]
+    [Tooltip("Segundos máximos que el servidor reintenta posicionar a este jugador si el primer intento falla (0 = sin reintentos).")]
+    [SerializeField] private float spawnRetryTimeout = 10f;
+    [Tooltip("Intervalo en segundos entre reintentos de spawn del servidor.")]
+    [SerializeField] private float spawnRetryInterval = 0.25f;
+
+    // Estado de spawn REPLICADO: el servidor lo publica al crear al jugador y el estado
+    // viaja JUNTO con el spawn del NetworkObject, de modo que el owner cliente se teleporta
+    // en OnNetworkSpawn ANTES de que su ClientNetworkTransform (owner-authoritative) escriba
+    // la posición por defecto de Netcode (la causa real de los jugadores solapados).
+    private readonly NetworkVariable<bool> networkSpawnAssigned = new NetworkVariable<bool>();
+    private readonly NetworkVariable<Vector3> networkSpawnPosition = new NetworkVariable<Vector3>();
+    private readonly NetworkVariable<Vector4> networkSpawnRotation = new NetworkVariable<Vector4>();
+    private bool serverAppliedSpawn;
+    private Coroutine spawnRetryRoutine;
+
+    // Estado de la última limpieza del registro anti-duplicados (para hacerlo una vez
+    // por carga de escena aunque haya varias instancias de este componente).
+    private static int lastClearedSceneHandle = int.MinValue;
+    private static int lastClearedFrame = -1;
+
     [Header("Tutorial Fixed Spawn")]
     [Tooltip("Si es true, en el tutorial offline el spawn es siempre el primer punto fijo en vez de aleatorio. No afecta a la partida en red.")]
     [SerializeField] private bool fixedSpawnInTutorial = true;
@@ -80,6 +113,9 @@ public class PlayerSpawnSetter : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
+        networkSpawnAssigned.OnValueChanged += HandleNetworkSpawnStateChanged;
+        networkSpawnPosition.OnValueChanged += HandleNetworkSpawnStateChanged;
+        networkSpawnRotation.OnValueChanged += HandleNetworkSpawnStateChanged;
         if (IsServer)
         {
             if (SceneManager.GetActiveScene().name != lobbySceneName)
@@ -87,19 +123,44 @@ public class PlayerSpawnSetter : NetworkBehaviour
                 if (!TryApplySpawnPosition())
                 {
                     SubscribeToSceneManager();
+                    StartSpawnRetryLoop();
                 }
             }
+        }
+        else
+        {
+            // Late joiner / spawn ya publicado por el servidor: aplicarlo de inmediato.
+            TryApplyNetworkSpawnPosition();
         }
     }
 
     public override void OnNetworkDespawn()
     {
+        networkSpawnAssigned.OnValueChanged -= HandleNetworkSpawnStateChanged;
+        networkSpawnPosition.OnValueChanged -= HandleNetworkSpawnStateChanged;
+        networkSpawnRotation.OnValueChanged -= HandleNetworkSpawnStateChanged;
+        StopSpawnRetryLoop();
+        // Libera el punto que ocupaba este jugador para las siguientes partidas.
+        if (IsServer) serverSpawnPositions.Remove(OwnerClientId);
         UnsubscribeFromSceneManager();
         base.OnNetworkDespawn();
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        // Nueva partida / recarga de escena: liberar los puntos reservados UNA sola vez.
+        // sceneLoaded se dispara una vez por cada instancia de PlayerSpawnSetter en
+        // la escena; limpiar en cada disparo borraba la reserva que acababa de hacer
+        // el jugador anterior (causa real de spawns en el mismo SpawnPoint).
+        if (mode == LoadSceneMode.Single && scene.name != lobbySceneName &&
+            (scene.handle != lastClearedSceneHandle || Time.frameCount != lastClearedFrame))
+        {
+            lastClearedSceneHandle = scene.handle;
+            lastClearedFrame = Time.frameCount;
+            serverSpawnPositions.Clear();
+            usedSpawnPointTransforms.Clear();
+        }
+
         if (TutorialManager.IsTutorialDummyObject(gameObject)) return;
         if (TutorialManager.IsTutorial && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening))
         {
@@ -141,6 +202,10 @@ public class PlayerSpawnSetter : NetworkBehaviour
         if (TryApplySpawnPosition())
         {
             UnsubscribeFromSceneManager();
+        }
+        else
+        {
+            StartSpawnRetryLoop();
         }
     }
 
@@ -242,18 +307,32 @@ public class PlayerSpawnSetter : NetworkBehaviour
             spawnPos += Vector3.up * spawnHeightOffset;
         }
 
-        // Condicional: no spawnear dentro de edificios ni obstáculos (misma lógica que los objetos).
-        if (IsPositionBlocked(spawnPos))
+        // Condicional: no spawnear dentro de edificios/obstáculos ni sobre el punto
+        // de otro jugador (misma lógica que los objetos + reserva anti-duplicados).
+        if (IsPositionBlocked(spawnPos) || IsTooCloseToOtherPlayerSpawns(spawnPos, OwnerClientId))
         {
-            Debug.LogWarning($"[PlayerSpawnSetter] Spawn del jugador {OwnerClientId} descartado en {spawnPos}: dentro de un obstáculo.");
+            Debug.LogWarning($"[PlayerSpawnSetter] Spawn del jugador {OwnerClientId} descartado en {spawnPos}: dentro de un obstáculo o demasiado cerca de otro jugador.");
             return false;
         }
 
+        // Reservar el punto: los siguientes jugadores lo descartarán automáticamente.
+        serverSpawnPositions[OwnerClientId] = spawnPos;
+
         // Aplicar en el servidor
         ApplySpawnPosition(spawnPos, spawnRot);
+        serverAppliedSpawn = true;
+        StopSpawnRetryLoop();
+
+        // Publicar el spawn replicado: el owner cliente (que es quien tiene autoridad del
+        // transform con ClientNetworkTransform) se teleporta apenas recibe el estado,
+        // evitando nacer en la posición por defecto apilada con el resto de jugadores.
+        networkSpawnAssigned.Value = true;
+        networkSpawnPosition.Value = spawnPos;
+        networkSpawnRotation.Value = new Vector4(spawnRot.x, spawnRot.y, spawnRot.z, spawnRot.w);
 
         // Si el owner es un cliente remoto (no el host), enviarle la posición
-        // porque ClientNetworkTransform da autoridad al owner.
+        // porque ClientNetworkTransform da autoridad al owner. Respaldo del estado
+        // replicado (por si el valor llegó antes de que el objeto terminara de crearse).
         if (!IsOwner)
         {
             TeleportOwnerToSpawnRpc(spawnPos, spawnRot);
@@ -353,11 +432,37 @@ public class PlayerSpawnSetter : NetworkBehaviour
     }
 
     /// <summary>
+    /// Devuelve true si la posición candidata está a menos de
+    /// <see cref="minSpawnDistance"/> del punto de spawn registrado de otro jugador.
+    /// Es el mecanismo que garantiza que dos jugadores nunca aparezcan en el mismo punto.
+    /// </summary>
+    private bool IsTooCloseToOtherPlayerSpawns(Vector3 position, ulong selfClientId)
+    {
+        float minSqr = minSpawnDistance * minSpawnDistance;
+        if (minSqr <= 0f) return false;
+
+        foreach (KeyValuePair<ulong, Vector3> entry in serverSpawnPositions)
+        {
+            if (entry.Key == selfClientId) continue;
+            if ((entry.Value - position).sqrMagnitude < minSqr) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Variante para el modo offline (un solo jugador local).</summary>
+    private bool IsTooCloseToOtherPlayerSpawns(Vector3 position)
+    {
+        return IsTooCloseToOtherPlayerSpawns(position, ulong.MaxValue);
+    }
+
+    /// <summary>
     /// Devuelve true si la posición cae dentro de un Collider sólido (no Trigger)
-    /// de <see cref="obstacleLayers"/> (misma lógica que
-    /// <see cref="CollectibleSpawnManager.IsPositionBlocked"/>), o dentro de un
-    /// Trigger de <see cref="blockerTriggerLayers"/> (zona prohibida invisible).
-    /// Los colliders de la capa Street nunca cuentan como obstáculo (es suelo válido).
+    /// de <see cref="obstacleLayers"/>, o dentro de un Trigger de
+    /// <see cref="blockerTriggerLayers"/> (zona prohibida invisible).
+    /// Exclusiones: los colliders de la capa Street nunca bloquean, y tampoco
+    /// bloquean los colliders cuya parte superior no sobrepasa los pies del
+    /// candidato (son SUELO, no edificios). Con obstacleLayers = ~0 esto es
+    /// imprescindible para no descartar TODO punto por tocar el piso (capa Default).
     /// </summary>
     public bool IsPositionBlocked(Vector3 position)
     {
@@ -370,10 +475,13 @@ public class PlayerSpawnSetter : NetworkBehaviour
         if (hits != null && hits.Length > 0)
         {
             int streetMask = ResolveStreetMask();
+            // Un collider que no sube más allá de los pies del candidato es suelo.
+            float feetTop = position.y + 0.05f;
             foreach (Collider hit in hits)
             {
                 if (hit == null) continue;
                 if (streetMask != 0 && IsInMask(hit.gameObject.layer, streetMask)) continue;
+                if (hit.bounds.max.y <= feetTop) continue;
                 return true;
             }
         }
@@ -482,8 +590,10 @@ public class PlayerSpawnSetter : NetworkBehaviour
             {
                 candidate = sampled + Vector3.up * spawnHeightOffset;
             }
-            // Condicional: si está dentro de una caja de colisión, probar en otro sitio
+            // Condicional: si está dentro de una caja de colisión o cerca del punto
+            // de otro jugador, probar en otro sitio
             if (IsPositionBlocked(candidate)) continue;
+            if (IsTooCloseToOtherPlayerSpawns(candidate, OwnerClientId)) continue;
             position = candidate;
             rotation = s.GetSpawnRotation();
             return true;
@@ -492,8 +602,25 @@ public class PlayerSpawnSetter : NetworkBehaviour
         return false;
     }
 
-    /// <summary>Elige un hijo aleatorio del contenedor que esté libre de obstáculos (tras ajuste de suelo).</summary>
+    /// <summary>
+    /// Elige un hijo aleatorio del contenedor libre de obstáculos, priorizando puntos
+    /// que todavía NO hayan sido usados por otro jugador en esta escena. Así dos
+    /// jugadores nunca toman el mismo SpawnPoint mientras haya puntos libres.
+    /// </summary>
     private bool TryGetRandomFreeChildPoint(GameObject container, out Vector3 position, out Quaternion rotation)
+    {
+        position = Vector3.zero;
+        rotation = Quaternion.identity;
+
+        // Primera pasada: solo puntos nunca usados en esta partida.
+        if (TryGetFreeChildPoint(container, true, out position, out rotation)) return true;
+
+        // Segunda pasada: si hay más jugadores que puntos y todos están usados,
+        // aceptar un punto usado pero libre de obstáculos y alejado de otros jugadores.
+        return TryGetFreeChildPoint(container, false, out position, out rotation);
+    }
+
+    private bool TryGetFreeChildPoint(GameObject container, bool onlyUnused, out Vector3 position, out Quaternion rotation)
     {
         position = Vector3.zero;
         rotation = Quaternion.identity;
@@ -504,6 +631,7 @@ public class PlayerSpawnSetter : NetworkBehaviour
         {
             Transform child = container.transform.GetChild(Random.Range(0, childCount));
             if (child == null) continue;
+            if (onlyUnused && usedSpawnPointTransforms.Contains(child)) continue;
             Vector3 candidate = child.position;
             Quaternion candidateRot = child.rotation;
             if (snapToGround)
@@ -511,6 +639,9 @@ public class PlayerSpawnSetter : NetworkBehaviour
             else
                 candidate += Vector3.up * spawnHeightOffset;
             if (IsPositionBlocked(candidate)) continue;
+            if (IsTooCloseToOtherPlayerSpawns(candidate, OwnerClientId)) continue;
+            // Reservar el hijo para los siguientes jugadores.
+            usedSpawnPointTransforms.Add(child);
             // Devolver el punto base (el ajuste de suelo/offset se aplica después una sola vez)
             position = child.position;
             rotation = candidateRot;
@@ -548,21 +679,23 @@ public class PlayerSpawnSetter : NetworkBehaviour
     /// desde bien alto y devuelve el punto de suelo + offset. Retorna false si no hay
     /// suelo debajo (el candidato se descarta en vez de dejar al jugador enterrado).
     /// Ignora Triggers para no dejar al jugador flotando sobre hitboxes.
-    /// Con requireStreetGround, solo acepta suelo de la capa Street.
+    /// Prioriza el suelo de la capa Street; si no hay nada en esa capa (escena sin
+    /// etiquetar) cae al suelo general para que el spawn aleatorio siga funcionando.
     /// </summary>
     private bool TryProbeGround(Vector3 sampledPos, out Vector3 groundedPos)
     {
         groundedPos = Vector3.zero;
         Vector3 rayStart = new Vector3(sampledPos.x, sampledPos.y + groundProbeHeight, sampledPos.z);
         int streetMask = ResolveStreetMask();
-        if (requireStreetGround && streetMask != 0)
+        if (streetMask != 0)
         {
             if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit streetHit, groundProbeHeight + 100f, streetMask, QueryTriggerInteraction.Ignore))
             {
                 groundedPos = streetHit.point + Vector3.up * spawnHeightOffset;
                 return true;
             }
-            return false;
+            // No forced return: si la escena no tiene colliders en la capa Street,
+            // morir aqui descartaria el 100% de los puntos aleatorios del volumen.
         }
         if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, groundProbeHeight + 100f, groundLayerMask, QueryTriggerInteraction.Ignore))
         {
@@ -576,6 +709,66 @@ public class PlayerSpawnSetter : NetworkBehaviour
     private void TeleportOwnerToSpawnRpc(Vector3 position, Quaternion rotation)
     {
         ApplySpawnPosition(position, rotation);
+    }
+
+    /// <summary>Callback de cualquier NetworkVariable de spawn: intenta aplicar el spawn replicado.</summary>
+    private void HandleNetworkSpawnStateChanged<T>(T previousValue, T newValue)
+    {
+        TryApplyNetworkSpawnPosition();
+    }
+
+    /// <summary>
+    /// Aplica en el cliente owner el spawn publicado por el servidor. El owner tiene
+    /// la autoridad del transform (ClientNetworkTransform), así que basta con que él
+    /// mismo se mueva: la posición se replica sola al servidor y al resto de clientes.
+    /// Los clientes no-owner no hacen nada (reciben la posición por replicación).
+    /// </summary>
+    private void TryApplyNetworkSpawnPosition()
+    {
+        if (IsServer) return;         // El servidor ya aplicó su copia directamente.
+        if (!IsOwner) return;         // Avatares ajenos: llegan por el NetworkTransform del owner.
+        if (!networkSpawnAssigned.Value) return;
+
+        Vector4 rot = networkSpawnRotation.Value;
+        ApplySpawnPosition(networkSpawnPosition.Value, new Quaternion(rot.x, rot.y, rot.z, rot.w));
+        Debug.Log($"[PlayerSpawnSetter] Owner {OwnerClientId} aplicó su spawn replicado en {networkSpawnPosition.Value}.");
+    }
+
+    /// <summary>
+    /// Reintenta periódicamente en el servidor hasta posicionar al jugador (o agotar el
+    /// tiempo). Evita que un primer intento fallido deje al jugador apilado en la posición
+    /// por defecto de Netcode junto a los demás hasta la siguiente carga de escena.
+    /// </summary>
+    private void StartSpawnRetryLoop()
+    {
+        if (spawnRetryRoutine != null || spawnRetryTimeout <= 0f) return;
+        spawnRetryRoutine = StartCoroutine(SpawnRetryLoop());
+    }
+
+    private void StopSpawnRetryLoop()
+    {
+        if (spawnRetryRoutine == null) return;
+        StopCoroutine(spawnRetryRoutine);
+        spawnRetryRoutine = null;
+    }
+
+    private IEnumerator SpawnRetryLoop()
+    {
+        float interval = Mathf.Max(0.05f, spawnRetryInterval);
+        float elapsed = 0f;
+        while (!serverAppliedSpawn && elapsed < spawnRetryTimeout)
+        {
+            yield return new WaitForSeconds(interval);
+            elapsed += interval;
+            if (serverAppliedSpawn) break;
+            TryApplySpawnPosition();
+        }
+
+        spawnRetryRoutine = null;
+        if (!serverAppliedSpawn && isActiveAndEnabled)
+        {
+            Debug.LogWarning($"[PlayerSpawnSetter] El jugador {OwnerClientId} sigue sin spawn válido tras {spawnRetryTimeout}s de reintentos.");
+        }
     }
 
     private void ApplySpawnPosition(Vector3 position, Quaternion rotation)
@@ -601,6 +794,9 @@ public class PlayerSpawnSetter : NetworkBehaviour
         if (groundProbeHeight < 5f) groundProbeHeight = 5f;
         if (fallbackSpawnOffset < 0f) fallbackSpawnOffset = 0f;
         if (maxSpawnAttempts < 1) maxSpawnAttempts = 1;
+        if (minSpawnDistance < 0f) minSpawnDistance = 0f;
+        if (spawnRetryTimeout < 0f) spawnRetryTimeout = 0f;
+        if (spawnRetryInterval < 0.05f) spawnRetryInterval = 0.05f;
         if (obstructionCheckHalfExtents.x < 0.01f) obstructionCheckHalfExtents.x = 0.01f;
         if (obstructionCheckHalfExtents.y < 0.01f) obstructionCheckHalfExtents.y = 0.01f;
         if (obstructionCheckHalfExtents.z < 0.01f) obstructionCheckHalfExtents.z = 0.01f;
