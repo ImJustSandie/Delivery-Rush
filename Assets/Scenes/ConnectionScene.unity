@@ -4595,7 +4595,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2417084229472350546, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
       propertyPath: noCoverFromScenes.Array.data[1].blockOutgoing
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 2473459815882466357, guid: 6203a7809c3b9594b9d30d0c790e7c53, type: 3}
       propertyPath: m_Name

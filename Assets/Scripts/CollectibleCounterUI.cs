@@ -30,6 +30,10 @@ public class CollectibleCounterUI : MonoBehaviour
     [SerializeField] private Color panelNormalColor = new Color(1f, 1f, 1f, 0.64f);
     [Tooltip("Color de fondo del panel cuando el jugador lleva la cantidad máxima de objetos encima.")]
     [SerializeField] private Color panelFullColor = new Color(0.9f, 0.25f, 0.25f, 0.85f);
+    [Tooltip("Si es true, usa panelFullIntenseColor (un rojo más intenso, con mejor contraste) en lugar de panelFullColor cuando el inventario está lleno.")]
+    [SerializeField] private bool useIntenseFullColor = true;
+    [Tooltip("Rojo intenso usado cuando el inventario está lleno y useIntenseFullColor es true.")]
+    [SerializeField] private Color panelFullIntenseColor = new Color(1f, 0.06f, 0.06f, 0.95f);
 
     [Header("Formato")]
     [Tooltip("Formato del contador. {0}=actual, {1}=máximo.")]
@@ -59,6 +63,10 @@ public class CollectibleCounterUI : MonoBehaviour
     [SerializeField] private float fullShakeStrength = 6f;
     [Tooltip("RectTransform que se anima. Si se deja vacío se usa el del panelImage (el panel completo con su texto).")]
     [SerializeField] private RectTransform fullPulseTarget;
+    [Tooltip("Si es true, la imagen de fondo del panel crece mientras el inventario está lleno. El texto del contador es hijo del panel, así que crece junto con ella y queda proporcional al fondo (sin descuadrarse).")]
+    [SerializeField] private bool growPanelWhenFull = true;
+    [Tooltip("Escala de la imagen de fondo del panel — y del texto que contiene — mientras el inventario está lleno.")]
+    [SerializeField] private float fullPanelScaleMultiplier = 1.4f;
 
     [Header("Mensaje al rechazar (maleta llena)")]
     [Tooltip("Si es true, en cada pulso (al llenarse o al intentar recoger estando lleno) aparece un mensaje sobre/bajo el panel.")]
@@ -74,6 +82,20 @@ public class CollectibleCounterUI : MonoBehaviour
     [Tooltip("Color del mensaje (el alfa se anima con el pulso).")]
     [SerializeField] private Color fullMessageColor = new Color(1f, 0.85f, 0.2f);
 
+    [Header("Escala del texto al estar lleno")]
+    [Tooltip("Escala final del mensaje 'Maleta llena' (1 = tamaño original de la fuente). Se aplica sobre el texto y además hereda el crecimiento del panel.")]
+    [SerializeField] private float fullMessageScale = 1.35f;
+
+    [Header("Variación de color del panel al estar lleno (seno)")]
+    [Tooltip("Si es true, mientras el inventario está lleno el color de fondo del panel varía constantemente siguiendo una función seno.")]
+    [SerializeField] private bool fullColorWave = true;
+    [Tooltip("Velocidad de la oscilación del seno (en radianes por segundo).")]
+    [SerializeField] private float fullColorWaveSpeed = 5f;
+    [Tooltip("Cuánto se acerca el color hacia fullColorWaveColor en el pico del seno (0 = sin variación, 1 = hasta el color pico).")]
+    [SerializeField, Range(0f, 1f)] private float fullColorWaveAmplitude = 0.35f;
+    [Tooltip("Color pico hacia el que oscila el fondo del panel (un rojo más claro) mientras el inventario está lleno.")]
+    [SerializeField] private Color fullColorWaveColor = new Color(1f, 0.45f, 0.35f, 0.95f);
+
     private bool isSubscribed;
     private int lastShownCount = int.MinValue;
     private int lastShownScore = int.MinValue;
@@ -86,6 +108,8 @@ public class CollectibleCounterUI : MonoBehaviour
     private Vector3 basePulseScale = Vector3.one;
     private Vector2 basePulsePosition;
     private bool hasBasePulseTransform;
+
+    private Coroutine fullColorWaveRoutine;
 
     private void Awake()
     {
@@ -152,8 +176,9 @@ public class CollectibleCounterUI : MonoBehaviour
     {
         CancelInvoke(nameof(TryBindToLocalPlayer));
         Unsubscribe();
-        StopFullPulse();
         wasFull = false;
+        StopFullPulse();
+        StopFullColorWave();
     }
 
     private void TryBindToLocalPlayer()
@@ -244,8 +269,9 @@ public class CollectibleCounterUI : MonoBehaviour
         }
         isSubscribed = false;
         // Sin jugador vinculado no hay estado "lleno": detener y restaurar el panel.
-        StopFullPulse();
         wasFull = false;
+        StopFullPulse();
+        StopFullColorWave();
     }
 
     private void OnCollectedChanged(int newCount)
@@ -328,7 +354,25 @@ public class CollectibleCounterUI : MonoBehaviour
         if (panelImage != null)
         {
             Color normal = (autoCapturePanelNormalColor && hasCapturedPanelColor) ? initialPanelColor : panelNormalColor;
-            panelImage.color = isFull ? panelFullColor : normal;
+            if (isFull)
+            {
+                Color full = useIntenseFullColor ? panelFullIntenseColor : panelFullColor;
+                if (fullColorWave && isActiveAndEnabled)
+                {
+                    // El fondo oscila constantemente (función seno) mientras esté lleno.
+                    StartFullColorWave(full);
+                }
+                else
+                {
+                    StopFullColorWave();
+                    panelImage.color = full;
+                }
+            }
+            else
+            {
+                StopFullColorWave();
+                panelImage.color = normal;
+            }
         }
 
         // Texto de contador
@@ -364,6 +408,7 @@ public class CollectibleCounterUI : MonoBehaviour
             scoreText.text = string.Format(scoreFormat, score);
         }
 
+        SetPanelFullScale(isFull);
         RefreshFullPulse(isFull);
     }
 
@@ -393,7 +438,14 @@ public class CollectibleCounterUI : MonoBehaviour
     /// </summary>
     private void EnsureFullMessageText()
     {
-        if (!showFullMessage || fullMessageText != null) return;
+        // Si ya existe (asignado desde el Inspector o creado antes), solo aplicar la escala configurada.
+        if (fullMessageText != null)
+        {
+            ApplyFullMessageScale();
+            return;
+        }
+
+        if (!showFullMessage) return;
 
         RectTransform parent = FullPulseRect;
         if (parent == null) return;
@@ -425,6 +477,30 @@ public class CollectibleCounterUI : MonoBehaviour
         text.color = c;
 
         fullMessageText = text;
+        ApplyFullMessageScale();
+    }
+
+    /// <summary>Aplica la escala configurada al texto del mensaje (1 = tamaño de fuente original).</summary>
+    private void ApplyFullMessageScale()
+    {
+        if (fullMessageText == null) return;
+        fullMessageText.rectTransform.localScale = Vector3.one * Mathf.Max(0.1f, fullMessageScale);
+    }
+
+    /// <summary>
+    /// Escala la imagen de fondo del panel (rect animado) mientras el inventario está lleno,
+    /// para que el texto agrandado quepa dentro. Se restaura al volver a estado normal.
+    /// </summary>
+    private void SetPanelFullScale(bool isFull)
+    {
+        if (!growPanelWhenFull) return;
+        RectTransform rect = FullPulseRect;
+        if (rect == null) return;
+        if (!hasBasePulseTransform) CaptureFullPulseBase(rect);
+        // Si hay un pulso en curso, la corrutina administra la escala y restaurará el base al terminar.
+        if (fullPulseRoutine != null) return;
+        float multiplier = isFull ? Mathf.Max(1f, fullPanelScaleMultiplier) : 1f;
+        rect.localScale = basePulseScale * multiplier;
     }
 
     /// <summary>Aplica el alfa del mensaje (0 = invisible), conservando el color configurado.</summary>
@@ -475,6 +551,41 @@ public class CollectibleCounterUI : MonoBehaviour
         SetFullMessageAlpha(0f);
     }
 
+    // ── Variación senoidal del color al estar lleno ──────────────────────
+
+    /// <summary>Inicia (una sola vez) la oscilación senoidal del color de fondo del panel.</summary>
+    private void StartFullColorWave(Color baseColor)
+    {
+        if (fullColorWaveRoutine != null || panelImage == null) return;
+        fullColorWaveRoutine = StartCoroutine(FullColorWaveRoutine(baseColor));
+    }
+
+    private void StopFullColorWave()
+    {
+        if (fullColorWaveRoutine == null) return;
+        StopCoroutine(fullColorWaveRoutine);
+        fullColorWaveRoutine = null;
+    }
+
+    /// <summary>
+    /// Mientras el inventario esté lleno, el color de fondo del panel varía constantemente
+    /// con una función seno: oscila entre el color base "lleno" y fullColorWaveColor.
+    /// </summary>
+    private IEnumerator FullColorWaveRoutine(Color baseColor)
+    {
+        float time = 0f;
+        float speed = Mathf.Max(0.01f, fullColorWaveSpeed);
+        while (panelImage != null)
+        {
+            time += Time.unscaledDeltaTime * speed;
+            // Función seno: 0 → 1 → 0 suavemente, escalado por la amplitud configurada.
+            float wave = (0.5f + 0.5f * Mathf.Sin(time)) * fullColorWaveAmplitude;
+            panelImage.color = Color.Lerp(baseColor, fullColorWaveColor, wave);
+            yield return null;
+        }
+        fullColorWaveRoutine = null;
+    }
+
     /// <summary>
     /// Un pulso: el panel crece hasta fullPulseScale con una pequeña sacudida y vuelve
     /// exactamente al tamaño/posición base. Se dispara al llenarse o al intentar recoger
@@ -484,7 +595,9 @@ public class CollectibleCounterUI : MonoBehaviour
     {
         float duration = Mathf.Max(0.01f, fullPulseDuration);
         float scaleFactor = Mathf.Max(1f, fullPulseScale);
-        Vector3 targetScale = basePulseScale * scaleFactor;
+        // Partir de la escala actual (puede estar agrandada por el estado lleno).
+        Vector3 startScale = rect.localScale;
+        Vector3 targetScale = startScale * scaleFactor;
 
         SetFullMessageAlpha(0f);
 
@@ -495,7 +608,7 @@ public class CollectibleCounterUI : MonoBehaviour
             float clamped = Mathf.Clamp01(t);
             // Curva 0 → 1 → 0 para que el pulso suba y baje suavemente.
             float pulse = Mathf.Sin(clamped * Mathf.PI);
-            rect.localScale = Vector3.LerpUnclamped(basePulseScale, targetScale, pulse);
+            rect.localScale = Vector3.LerpUnclamped(startScale, targetScale, pulse);
             float shake = fullShakeStrength * pulse;
             float phase = clamped * Mathf.PI * 6f;
             rect.anchoredPosition = basePulsePosition
@@ -504,7 +617,7 @@ public class CollectibleCounterUI : MonoBehaviour
             yield return null;
         }
 
-        rect.localScale = basePulseScale;
+        rect.localScale = startScale;
         rect.anchoredPosition = basePulsePosition;
         SetFullMessageAlpha(0f);
         fullPulseRoutine = null;
@@ -523,7 +636,10 @@ public class CollectibleCounterUI : MonoBehaviour
         if (fullPulseScale < 1f) fullPulseScale = 1f;
         if (fullPulseDuration <= 0f) fullPulseDuration = 0.35f;
         if (fullShakeStrength < 0f) fullShakeStrength = 0f;
+        if (fullPanelScaleMultiplier < 1f) fullPanelScaleMultiplier = 1f;
         if (fullMessageFontSize <= 0f) fullMessageFontSize = 42f;
+        if (fullMessageScale < 0.1f) fullMessageScale = 1f;
+        if (fullColorWaveSpeed < 0.01f) fullColorWaveSpeed = 5f;
         if (string.IsNullOrEmpty(fullMessage)) fullMessage = "Maleta llena";
         // Actualizar preview en editor si hay player en escena
         if (Application.isPlaying) RefreshUI();

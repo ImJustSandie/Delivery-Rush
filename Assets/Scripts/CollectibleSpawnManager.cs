@@ -1,6 +1,8 @@
+using System.Collections;
 using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.UI;
 
 /// <summary>
 /// Manager central que administra la instanciación de recolectables.
@@ -28,6 +30,46 @@ public class CollectibleSpawnManager : MonoBehaviour
     [SerializeField] private float slowPowerUpChance = 0.5f;
 
     public float SlowPowerUpChance => slowPowerUpChance;
+
+    [Header("Objeto dorado (muy raro)")]
+    [Tooltip("Material dorado que se aplica como skin al objeto normal (Golden.mat). Si queda vacío se crea uno dorado en runtime.")]
+    [SerializeField] private Material goldenMaterial;
+    [Tooltip("Probabilidad de que un spawn sea un objeto DORADO en vez de normal (0.01 = 1%). Se sortea ANTES que el power-up.")]
+    [Range(0f, 1f)]
+    [SerializeField] private float goldenChance = 0.01f;
+    [Tooltip("Número máximo de objetos dorados simultáneos en escena (requisito: solo uno a la vez).")]
+    [SerializeField] private int maxGolden = 1;
+    [Tooltip("Puntos directos al marcador que otorga el objeto dorado a quien lo recolecta (no pasa por inventario).")]
+    [SerializeField] private int goldenPoints = 5;
+    [Tooltip("Segundos de partida que deben transcurrir ANTES de que pueda aparecer un objeto dorado (se cuenta desde el inicio real de la partida, tras la cuenta regresiva).")]
+    [SerializeField] private float goldenSpawnDelay = 20f;
+
+    public int GoldenPoints => goldenPoints;
+
+    [Header("Aviso UI de objeto dorado")]
+    [Tooltip("Imagen que se muestra temporalmente (con fade in/out) cuando aparece un objeto dorado. Asignar la Image en un Canvas de la escena.")]
+    [SerializeField] private Image goldenNotificationImage;
+    [Tooltip("Segundos que la imagen permanece TOTALMENTE visible antes del fade out.")]
+    [SerializeField] private float goldenNotifyDuration = 3f;
+    [Tooltip("Duración del fade in de la imagen (segundos).")]
+    [SerializeField] private float goldenNotifyFadeIn = 0.4f;
+    [Tooltip("Duración del fade out de la imagen (segundos).")]
+    [SerializeField] private float goldenNotifyFadeOut = 0.6f;
+
+    [Header("Evento dorado (última fase de la partida)")]
+    [Tooltip("Segundos restantes de partida a los que empieza el evento dorado. Ej: 20 = arranca faltando 20s para el final.")]
+    [SerializeField] private float goldenEventStartRemaining = 20f;
+    [Tooltip("Probabilidad de que cada spawn sea dorado mientras el evento esté activo (0.6 = 60%).")]
+    [Range(0f, 1f)]
+    [SerializeField] private float goldenEventChance = 0.6f;
+    [Tooltip("Imagen del evento dorado. Aparece con fade al iniciar el evento, permanece un tiempo y desaparece con fade out.")]
+    [SerializeField] private Image goldenEventImage;
+    [Tooltip("Duración del fade in de la imagen del evento (segundos).")]
+    [SerializeField] private float goldenEventFadeIn = 0.6f;
+    [Tooltip("Segundos que la imagen del evento permanece TOTALMENTE visible antes del fade out.")]
+    [SerializeField] private float goldenEventDuration = 3f;
+    [Tooltip("Duración del fade out de la imagen del evento (segundos).")]
+    [SerializeField] private float goldenEventFadeOut = 0.6f;
 
     [Header("Límites")]
     [Tooltip("Número máximo de instancias simultáneas en escena. No se generan más si se alcanza.")]
@@ -66,9 +108,47 @@ public class CollectibleSpawnManager : MonoBehaviour
 
     private readonly HashSet<InteractableCube> trackedInstances = new HashSet<InteractableCube>();
     private readonly HashSet<PowerUpCube> trackedPowerUps = new HashSet<PowerUpCube>();
+    private readonly HashSet<InteractableCube> trackedGolden = new HashSet<InteractableCube>();
     private readonly List<CollectibleSpawner> registeredSpawners = new List<CollectibleSpawner>();
 
     private float nextAutoSpawnTime;
+
+    // ── Estado del aviso UI dorado ────────────────────────────────────────
+    private Coroutine goldenNotificationRoutine;
+    private CanvasGroup goldenNotificationGroup;
+    private Coroutine goldenEventFadeRoutine;
+    private CanvasGroup goldenEventGroup;
+    private bool goldenEventActive;
+    // Fallback cuando no hay MatchTimerManager (tutorial offline)
+    private float fallbackMatchStartTime;
+    private bool fallbackMatchClockStarted;
+
+    /// <summary>True mientras dure el evento dorado (últimos goldenEventStartRemaining segundos de partida).</summary>
+    public bool IsGoldenEventActive => goldenEventActive;
+
+    /// <summary>True cuando ya transcurrieron <see cref="goldenSpawnDelay"/> segundos de partida real (tras el 3-2-1-GO).</summary>
+    public bool IsGoldenUnlocked
+    {
+        get
+        {
+            MatchTimerManager timer = MatchTimerManager.Instance;
+            if (timer != null)
+            {
+                // La partida corre en serio desde que el MatchTimer arranca (después de la cuenta regresiva)
+                if (!timer.IsRunning) return false;
+                float elapsed = timer.Duration - timer.RemainingTime;
+                return elapsed >= goldenSpawnDelay;
+            }
+
+            // Fallback offline (tutorial / sin MatchTimerManager): medir desde el arranque del manager
+            if (!fallbackMatchClockStarted)
+            {
+                fallbackMatchClockStarted = true;
+                fallbackMatchStartTime = Time.time;
+            }
+            return Time.time - fallbackMatchStartTime >= goldenSpawnDelay;
+        }
+    }
 
     public int ActiveCount
     {
@@ -90,6 +170,35 @@ public class CollectibleSpawnManager : MonoBehaviour
         }
     }
 
+    public int ActiveGoldenCount
+    {
+        get
+        {
+            trackedGolden.RemoveWhere(c => c == null);
+            return trackedGolden.Count;
+        }
+    }
+
+    /// <summary>Solo puede haber maxGolden dorados a la vez; durante el evento dorado NO hay límite.</summary>
+    public bool CanSpawnGolden => CanSpawn && (IsGoldenEventActive || ActiveGoldenCount < maxGolden);
+
+    /// <summary>Material dorado para la skin. Si no se asignó en el Inspector, crea uno dorado URP en runtime.</summary>
+    public Material GoldenMaterial
+    {
+        get
+        {
+            if (goldenMaterial != null) return goldenMaterial;
+            goldenMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
+            {
+                name = "GoldenRuntime"
+            };
+            goldenMaterial.SetColor("_BaseColor", new Color(1f, 0.82f, 0.01f, 1f));
+            goldenMaterial.SetFloat("_Metallic", 1f);
+            goldenMaterial.SetFloat("_Smoothness", 0.85f);
+            return goldenMaterial;
+        }
+    }
+
     public int MaxInstances => maxInstances;
     public bool CanSpawn => ActiveCount < maxInstances;
     public bool CanSpawnPowerUp => CanSpawn && ActivePowerUpCount < maxPowerUps;
@@ -108,6 +217,8 @@ public class CollectibleSpawnManager : MonoBehaviour
         // Migración: si quedó 0 por defecto antiguo, activar respawn periódico
         if (autoSpawnInterval == 0f && respawnOnCollected)
             autoSpawnInterval = 2f;
+
+        PrepareGoldenNotification();
     }
 
     private void OnDestroy()
@@ -167,6 +278,8 @@ public class CollectibleSpawnManager : MonoBehaviour
 
     private void Update()
     {
+        UpdateGoldenEventState();
+
         if (autoSpawnInterval <= 0f) return;
         if (!IsServer) return;
         if (Time.time < nextAutoSpawnTime) return;
@@ -184,6 +297,7 @@ public class CollectibleSpawnManager : MonoBehaviour
         {
             // Debug.Log($"[CollectibleSpawnManager] Registrado {cube.name} -> {ActiveCount}/{maxInstances}");
         }
+        if (cube.IsGolden) trackedGolden.Add(cube);
     }
 
     /// <summary>Registra un power-up instanciado.</summary>
@@ -196,6 +310,7 @@ public class CollectibleSpawnManager : MonoBehaviour
     public void Unregister(InteractableCube cube)
     {
         if (cube == null) return;
+        trackedGolden.Remove(cube);
         bool removed = trackedInstances.Remove(cube);
         if (removed)
         {
@@ -345,8 +460,44 @@ public class CollectibleSpawnManager : MonoBehaviour
         return UnityEngine.Random.value < powerUpChance;
     }
 
-    /// <summary>Instancia el prefab elegido (power-up o normal) y lo registra. Asume límite y bloqueo ya validados.</summary>
-    private bool SpawnChosenPrefab(Vector3 position, Quaternion rotation, bool isPowerUp)
+    /// <summary>
+    /// Decide si este spawn debe ser un objeto dorado.
+    /// NORMAL (antes del evento): muy raro (<see cref="goldenChance"/>) y requiere
+    /// el delay de partida (<see cref="goldenSpawnDelay"/>) y el límite <see cref="maxGolden"/>.
+    /// EVENTO (últimos <see cref="goldenEventStartRemaining"/>s): probabilidad <see cref="goldenEventChance"/>
+    /// y SIN límite de dorados simultáneos. Se sortea ANTES que el power-up.
+    /// </summary>
+    private bool RollIsGolden()
+    {
+        if (collectiblePrefab == null) return false;
+
+        float chance;
+        if (IsGoldenEventActive)
+        {
+            // Condicional evento: 60% de dorado y sin límite de cantidad
+            chance = goldenEventChance;
+        }
+        else
+        {
+            // Condicional: no aparece comida dorada hasta pasados goldenSpawnDelay segundos de partida
+            if (!IsGoldenUnlocked) return false;
+            chance = goldenChance;
+        }
+
+        if (chance <= 0f) return false;
+        if (!CanSpawnGolden) return false;
+        return UnityEngine.Random.value < chance;
+    }
+
+    /// <summary>Sortea el tipo de spawn: primero dorado (muy raro), después power-up; el resto es normal.</summary>
+    private void RollSpawnType(out bool isPowerUp, out bool isGolden)
+    {
+        isGolden = RollIsGolden();
+        isPowerUp = !isGolden && RollIsPowerUp();
+    }
+
+    /// <summary>Instancia el prefab elegido (dorado / power-up / normal) y lo registra. Asume límite y bloqueo ya validados.</summary>
+    private bool SpawnChosenPrefab(Vector3 position, Quaternion rotation, bool isPowerUp, bool isGolden)
     {
         NetworkObject prefabToSpawn = isPowerUp ? powerUpPrefab : collectiblePrefab;
         if (prefabToSpawn == null)
@@ -357,10 +508,17 @@ public class CollectibleSpawnManager : MonoBehaviour
 
         NetworkObject instance = Instantiate(prefabToSpawn, position, rotation);
         // Sorteo del modelo visible antes del Spawn para que el índice viaje replicado desde el inicio.
-        if (instance != null && IsNetworkServer && !isPowerUp)
+        if (instance != null)
         {
             InteractableCube cubePre = instance.GetComponent<InteractableCube>();
-            if (cubePre != null) cubePre.RollVariantServerSide();
+            if (cubePre != null)
+            {
+                // El dorado es un objeto normal con skin cambiada: mismo sorteo de variante.
+                if (IsNetworkServer && !isPowerUp)
+                    cubePre.RollVariantServerSide();
+                if (isGolden)
+                    cubePre.ApplyGoldenServerSide();
+            }
         }
         // Solo hacer Spawn de red si hay sesión activa como servidor; en offline queda como objeto local.
         if (instance != null && IsNetworkServer)
@@ -381,6 +539,8 @@ public class CollectibleSpawnManager : MonoBehaviour
             InteractableCube cube = instance.GetComponent<InteractableCube>();
             if (cube != null && !trackedInstances.Contains(cube))
                 trackedInstances.Add(cube);
+            if (cube != null && cube.IsGolden && !trackedGolden.Contains(cube))
+                trackedGolden.Add(cube);
         }
         return true;
     }
@@ -415,7 +575,8 @@ public class CollectibleSpawnManager : MonoBehaviour
             return false;
         }
 
-        return SpawnChosenPrefab(position, rotation, RollIsPowerUp());
+        RollSpawnType(out bool isPowerUp, out bool isGolden);
+        return SpawnChosenPrefab(position, rotation, isPowerUp, isGolden);
     }
 
     /// <summary>Intenta spawnear en un spawnPoint aleatorio o en un punto aleatorio dentro de una hitbox. Reintenta en otro sitio si cae dentro de un obstáculo.</summary>
@@ -498,7 +659,8 @@ public class CollectibleSpawnManager : MonoBehaviour
             Debug.Log($"[CollectibleSpawnManager] Spawn descartado en {position}: dentro de un obstáculo.");
             return false;
         }
-        return SpawnChosenPrefab(position, rotation, RollIsPowerUp());
+        RollSpawnType(out bool isPowerUp, out bool isGolden);
+        return SpawnChosenPrefab(position, rotation, isPowerUp, isGolden);
     }
 
     private Transform GetRandomSpawnPoint()
@@ -562,6 +724,225 @@ public class CollectibleSpawnManager : MonoBehaviour
             nextAutoSpawnTime = Time.time + autoSpawnInterval;
     }
 
+    // ── Evento dorado (última fase de la partida) ──────────────────────────
+
+    /// <summary>
+    /// Refresca el estado del evento dorado cada frame. La partida se mide con
+    /// MatchTimerManager (replicado a todos los clientes), así que el evento
+    /// arranca/termina de forma consistente en servidor y clientes.
+    /// </summary>
+    private void UpdateGoldenEventState()
+    {
+        bool active = false;
+        MatchTimerManager timer = MatchTimerManager.Instance;
+        if (timer != null && timer.IsRunning)
+        {
+            float remaining = timer.RemainingTime;
+            active = 0f < remaining && remaining <= goldenEventStartRemaining;
+        }
+
+        if (active == goldenEventActive) return;
+        goldenEventActive = active;
+        if (active)
+        {
+            ShowGoldenEventImage();
+            ConvertHalfObjectsToGolden();
+        }
+        else HideGoldenEventImage();
+    }
+
+    /// <summary>
+    /// Al iniciar el evento, la MITAD de los objetos normales ya presentes en el mapa
+    /// se convierten en dorados al azar (solo servidor; el flag dorado se replica vía
+    /// NetworkVariable y cada cliente aplica la skin con ApplyGoldenSkin).
+    /// Los nuevos spawns durante el evento salen por <see cref="goldenEventChance"/>.
+    /// </summary>
+    private void ConvertHalfObjectsToGolden()
+    {
+        if (!IsServer) return;
+
+        // Objetos normales actuales (descarta destruidos, dorados previos y ya recolectados)
+        trackedInstances.RemoveWhere(c => c == null);
+        List<InteractableCube> normalCubes = new List<InteractableCube>();
+        foreach (InteractableCube cube in trackedInstances)
+        {
+            if (cube == null || cube.IsGolden || cube.IsCollected) continue;
+            normalCubes.Add(cube);
+        }
+        if (normalCubes.Count == 0)
+        {
+            Debug.Log("[CollectibleSpawnManager] Evento dorado iniciado sin objetos normales que convertir.");
+            return;
+        }
+
+        int toConvert = Mathf.Min(normalCubes.Count, Mathf.Max(1, normalCubes.Count / 2));
+        for (int i = 0; i < toConvert; i++)
+        {
+            int pick = UnityEngine.Random.Range(0, normalCubes.Count);
+            InteractableCube target = normalCubes[pick];
+            normalCubes.RemoveAt(pick);
+            if (target == null || target.IsCollected) continue;
+            target.ApplyGoldenServerSide();
+            if (target.IsGolden && !trackedGolden.Contains(target))
+                trackedGolden.Add(target);
+        }
+        Debug.Log($"[CollectibleSpawnManager] Evento dorado: convertidos {toConvert} objetos normal(es) en dorados.");
+    }
+
+    /// <summary>Muestra temporalmente la imagen del evento con fade in, espera y fade out (igual que el aviso de dorado).</summary>
+    private void ShowGoldenEventImage()
+    {
+        if (goldenEventImage == null) return;
+        if (!isActiveAndEnabled) return;
+        if (goldenEventFadeRoutine != null)
+            StopCoroutine(goldenEventFadeRoutine);
+        goldenEventFadeRoutine = StartCoroutine(GoldenEventFadeRoutine());
+    }
+
+    private System.Collections.IEnumerator GoldenEventFadeRoutine()
+    {
+        CanvasGroup group = EnsureCanvasGroup(goldenEventImage, ref goldenEventGroup);
+        goldenEventImage.gameObject.SetActive(true);
+        goldenEventGroup.interactable = false;
+        goldenEventGroup.blocksRaycasts = false;
+
+        float fadeIn = Mathf.Max(0f, goldenEventFadeIn);
+        float hold = Mathf.Max(0f, goldenEventDuration);
+        float fadeOut = Mathf.Max(0f, goldenEventFadeOut);
+
+        if (fadeIn > 0f)
+        {
+            float t = 0f;
+            while (t < fadeIn)
+            {
+                t += Time.unscaledDeltaTime;
+                group.alpha = Mathf.Clamp01(t / fadeIn);
+                yield return null;
+            }
+        }
+        group.alpha = 1f;
+
+        if (hold > 0f)
+            yield return new WaitForSeconds(hold);
+
+        if (fadeOut > 0f)
+        {
+            float t = 0f;
+            while (t < fadeOut)
+            {
+                t += Time.unscaledDeltaTime;
+                group.alpha = 1f - Mathf.Clamp01(t / fadeOut);
+                yield return null;
+            }
+        }
+        group.alpha = 0f;
+        goldenEventImage.gameObject.SetActive(false);
+        goldenEventFadeRoutine = null;
+    }
+
+    /// <summary>Oculta la imagen del evento y cancela su fade en curso (p.ej. si el evento se desactiva al volver al Lobby).</summary>
+    private void HideGoldenEventImage()
+    {
+        if (goldenEventFadeRoutine != null)
+        {
+            StopCoroutine(goldenEventFadeRoutine);
+            goldenEventFadeRoutine = null;
+        }
+        if (goldenEventGroup == null) return;
+        goldenEventGroup.alpha = 0f;
+        goldenEventImage.gameObject.SetActive(false);
+    }
+
+    // ── Utilidades ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Prepara los CanvasGroup de ambas imágenes (aviso y evento): alpha 0 y sin bloquear raycasts.
+    /// Crea el CanvasGroup si la Image no lo trae (todo por código, sin tocar la escena).
+    /// </summary>
+    private void PrepareGoldenNotification()
+    {
+        if (goldenNotificationImage != null)
+        {
+            CanvasGroup group = EnsureCanvasGroup(goldenNotificationImage, ref goldenNotificationGroup);
+            group.alpha = 0f;
+        }
+        if (goldenEventImage != null)
+        {
+            CanvasGroup group = EnsureCanvasGroup(goldenEventImage, ref goldenEventGroup);
+            group.alpha = 0f;
+        }
+    }
+
+    /// <summary>Devuelve el CanvasGroup de la Image, creándolo si falta, y desactiva su interacción/raycast.</summary>
+    private CanvasGroup EnsureCanvasGroup(Image image, ref CanvasGroup cached)
+    {
+        if (cached == null)
+        {
+            cached = image.GetComponent<CanvasGroup>();
+            if (cached == null)
+                cached = image.gameObject.AddComponent<CanvasGroup>();
+            cached.interactable = false;
+            cached.blocksRaycasts = false;
+        }
+        return cached;
+    }
+
+    /// <summary>
+    /// Activa temporalmente la imagen de aviso con fade in, espera y fade out.
+    /// Lo llaman los InteractableCubes dorados desde OnNetworkSpawn/local (funciona en servidor, clientes y offline).
+    /// </summary>
+    public void NotifyGoldenAppeared()
+    {
+        if (goldenNotificationImage == null) return;
+        // Durante el evento dorado, los objetos dorados NO disparan esta notificación
+        if (IsGoldenEventActive) return;
+        if (!isActiveAndEnabled) return;
+        EnsureCanvasGroup(goldenNotificationImage, ref goldenNotificationGroup);
+        if (goldenNotificationRoutine != null)
+            StopCoroutine(goldenNotificationRoutine);
+        goldenNotificationRoutine = StartCoroutine(GoldenNotificationFadeRoutine());
+    }
+
+    private IEnumerator GoldenNotificationFadeRoutine()
+    {
+        EnsureCanvasGroup(goldenNotificationImage, ref goldenNotificationGroup);
+        goldenNotificationImage.gameObject.SetActive(true);
+        goldenNotificationGroup.interactable = false;
+        goldenNotificationGroup.blocksRaycasts = false;
+
+        float fadeIn = Mathf.Max(0f, goldenNotifyFadeIn);
+        float hold = Mathf.Max(0f, goldenNotifyDuration);
+        float fadeOut = Mathf.Max(0f, goldenNotifyFadeOut);
+
+        if (fadeIn > 0f)
+        {
+            float t = 0f;
+            while (t < fadeIn)
+            {
+                t += Time.unscaledDeltaTime;
+                goldenNotificationGroup.alpha = Mathf.Clamp01(t / fadeIn);
+                yield return null;
+            }
+        }
+        goldenNotificationGroup.alpha = 1f;
+
+        if (hold > 0f)
+            yield return new WaitForSeconds(hold);
+
+        if (fadeOut > 0f)
+        {
+            float t = 0f;
+            while (t < fadeOut)
+            {
+                t += Time.unscaledDeltaTime;
+                goldenNotificationGroup.alpha = 1f - Mathf.Clamp01(t / fadeOut);
+                yield return null;
+            }
+        }
+        goldenNotificationGroup.alpha = 0f;
+        goldenNotificationRoutine = null;
+    }
+
     // ── Utilidades ─────────────────────────────────────────────────────────
 
 #if UNITY_EDITOR
@@ -573,6 +954,18 @@ public class CollectibleSpawnManager : MonoBehaviour
         if (powerUpChance > 1f) powerUpChance = 1f;
         if (slowPowerUpChance < 0f) slowPowerUpChance = 0f;
         if (slowPowerUpChance > 1f) slowPowerUpChance = 1f;
+        if (goldenChance < 0f) goldenChance = 0f;
+        if (goldenChance > 1f) goldenChance = 1f;
+        if (maxGolden < 0) maxGolden = 0;
+        if (goldenPoints < 0) goldenPoints = 0;
+        if (goldenSpawnDelay < 0f) goldenSpawnDelay = 0f;
+        if (goldenNotifyDuration < 0f) goldenNotifyDuration = 0f;
+        if (goldenNotifyFadeIn < 0f) goldenNotifyFadeIn = 0f;
+        if (goldenNotifyFadeOut < 0f) goldenNotifyFadeOut = 0f;
+        if (goldenEventStartRemaining < 0f) goldenEventStartRemaining = 0f;
+        if (goldenEventFadeIn < 0f) goldenEventFadeIn = 0f;
+        if (goldenEventDuration < 0f) goldenEventDuration = 0f;
+        if (goldenEventFadeOut < 0f) goldenEventFadeOut = 0f;
         if (initialSpawnCount < 0) initialSpawnCount = 0;
         if (autoSpawnInterval < 0f) autoSpawnInterval = 0f;
         if (maxSpawnAttempts < 1) maxSpawnAttempts = 1;

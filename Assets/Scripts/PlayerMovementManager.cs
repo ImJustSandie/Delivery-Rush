@@ -1334,6 +1334,24 @@ public class PlayerMovementManager : NetworkBehaviour
         collectedCount.Value += allowed;
     }
 
+    /// <summary>
+    /// Suma puntos directamente al marcador (sin pasar por el inventario ni la entrega).
+    /// Solo servidor/offline. Lo usa el objeto dorado al recolectarse.
+    /// </summary>
+    public bool AddScoreDirectServerSide(int amount)
+    {
+        if (amount <= 0) return false;
+        if (IsOfflineTutorial)
+        {
+            offlineScore += amount;
+            ScoreChanged?.Invoke(offlineScore);
+            return true;
+        }
+        if (!IsServer) return false;
+        deliveredScore.Value += amount;
+        return true;
+    }
+
     // ── Inventario de power-ups (el tipo se sortea al recoger) ────────────
 
     /// <summary>Variante solo-servidor. Encola power-ups del tipo indicado (FIFO). Retorna false si la cola está llena.</summary>

@@ -50,6 +50,21 @@ public class InteractableCube : NetworkBehaviour
     [Tooltip("Índice de la variante visible (-1 = sin sortear). Solo el servidor escribe, todos aplican.")]
     private NetworkVariable<int> activeVariantIndex = new NetworkVariable<int>(-1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+    // ── Objeto dorado (skin especial + puntos directos, muy raro, solo puede haber uno) ──
+
+    [Tooltip("Puntos de fallback si no hay CollectibleSpawnManager en escena (el valor real vive en el Manager).")]
+    private const int DefaultGoldenPoints = 5;
+
+    /// <summary>True si esta instancia es el objeto dorado. El servidor lo marca antes del Spawn; viaja replicado.</summary>
+    private NetworkVariable<bool> isGolden = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    public bool IsGolden => isGolden.Value;
+
+    /// <summary>Puntos que otorga este cubo al recolectarse si es dorado (configurado en CollectibleSpawnManager).</summary>
+    private int GoldenPoints => CollectibleSpawnManager.Instance != null
+        ? CollectibleSpawnManager.Instance.GoldenPoints
+        : DefaultGoldenPoints;
+
     private readonly List<GameObject> resolvedVariants = new List<GameObject>();
     private bool variantsResolved;
 
@@ -88,6 +103,86 @@ public class InteractableCube : NetworkBehaviour
     {
         if (GetComponent<CollectibleFloatAnimation>() == null)
             gameObject.AddComponent<CollectibleFloatAnimation>();
+    }
+
+    // ── Objeto dorado (skin + puntos directos) ──────────────────────────────
+
+    private void OnGoldenStateChanged(bool previous, bool current)
+    {
+        if (current)
+        {
+            ApplyGoldenSkin();
+            CollectibleSpawnManager.Instance?.NotifyGoldenAppeared();
+        }
+    }
+
+    /// <summary>
+    /// Marca este cubo como dorado (solo servidor / offline). Debe llamarse ANTES
+    /// del <see cref="NetworkObject.Spawn"/> para que el flag viaje replicado con la
+    /// instanciación, igual que <see cref="RollVariantServerSide"/>.
+    /// Aplica la skin dorada localmente (cubra servidor y modo offline sin red).
+    /// </summary>
+    public void ApplyGoldenServerSide()
+    {
+        isGolden.Value = true;
+        ApplyGoldenSkin();
+        // Offline/local: el OnValueChanged puede no dispararse sin red -> avisar directo
+        CollectibleSpawnManager.Instance?.NotifyGoldenAppeared();
+    }
+
+    private void ApplyGoldenIfEnabled()
+    {
+        if (isGolden.Value) ApplyGoldenSkin();
+    }
+
+    /// <summary>Cambia la skin del cubo por el material dorado del CollectibleSpawnManager (solo variante activa).</summary>
+    private void ApplyGoldenSkin()
+    {
+        if (!isGolden.Value) return;
+        Material goldenSkin = CollectibleSpawnManager.Instance != null
+            ? CollectibleSpawnManager.Instance.GoldenMaterial
+            : null;
+        if (goldenSkin == null) return;
+
+        GameObject target = GetActiveVariantGameObject();
+        if (target == null) return;
+
+        foreach (Renderer renderer in target.GetComponentsInChildren<Renderer>(true))
+        {
+            if (renderer == null) continue;
+            // Preservar slots: sustituir cada material compartido por el dorado
+            // (crea instancias por-renderer, no afecta a otros cubos).
+            Material[] materials = renderer.sharedMaterials;
+            bool changed = false;
+            for (int i = 0; i < materials.Length; i++)
+            {
+                if (materials[i] != goldenSkin)
+                {
+                    materials[i] = goldenSkin;
+                    changed = true;
+                }
+            }
+            if (changed) renderer.materials = materials;
+        }
+    }
+
+    /// <summary>Resuelve la variante actualmente visible (o el GameObject entero si el prefab no tiene variantes).</summary>
+    private GameObject GetActiveVariantGameObject()
+    {
+        ResolveVariants();
+        if (resolvedVariants.Count == 0) return gameObject;
+        int index = activeVariantIndex.Value;
+        if (index < 0 || index >= resolvedVariants.Count)
+        {
+            // Buscar la variante activa que ya aplicó ApplyVariant
+            for (int i = 0; i < resolvedVariants.Count; i++)
+            {
+                GameObject variant = resolvedVariants[i];
+                if (variant != null && variant.activeSelf) return variant;
+            }
+            index = 0;
+        }
+        return resolvedVariants[index];
     }
 
     // ── Variantes visuales (un modelo visible por instancia) ────────────────
@@ -160,17 +255,26 @@ public class InteractableCube : NetworkBehaviour
         GetComponent<CollectibleFloatAnimation>()?.NotifySpawned();
         CollectibleSpawnManager.Instance?.Register(this);
         activeVariantIndex.OnValueChanged += OnVariantIndexChanged;
+        isGolden.OnValueChanged += OnGoldenStateChanged;
         // El servidor sortea si aún no hay índice (p.ej. objeto colocado en escena); los clientes aplican el replicado.
         if (IsServer && activeVariantIndex.Value < 0)
         {
             activeVariantIndex.Value = DrawRandomVariantIndex();
         }
         ApplyVariant(activeVariantIndex.Value);
+        // Aviso de dorado: se dispara en TODOS los clientes al sincronizarse el flag
+        // (cubre también a los que se unen tarde, independientemente de OnValueChanged).
+        if (isGolden.Value)
+        {
+            ApplyGoldenSkin();
+            CollectibleSpawnManager.Instance?.NotifyGoldenAppeared();
+        }
     }
 
     public override void OnNetworkDespawn()
     {
         activeVariantIndex.OnValueChanged -= OnVariantIndexChanged;
+        isGolden.OnValueChanged -= OnGoldenStateChanged;
         CollectibleSpawnManager.Instance?.Unregister(this);
         base.OnNetworkDespawn();
     }
@@ -203,6 +307,7 @@ public class InteractableCube : NetworkBehaviour
         {
             ApplyVariant(DrawRandomVariantIndex());
         }
+        ApplyGoldenIfEnabled();
     }
 
     private void FixedUpdate()
@@ -295,7 +400,8 @@ public class InteractableCube : NetworkBehaviour
     public bool TryCollect(PlayerMovementManager player)
     {
         if (isCollected || player == null) return false;
-        if (player.IsInventoryFull) return false;
+        // El dorado NO pasa por inventario, se recolecta aunque esté lleno.
+        if (!IsGolden && player.IsInventoryFull) return false;
 
         if (TutorialManager.IsTutorial && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening))
         {
@@ -344,7 +450,7 @@ public class InteractableCube : NetworkBehaviour
             NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(playerNetworkObjectId, out playerObj))
         {
             targetPlayer = playerObj.GetComponent<PlayerMovementManager>();
-            if (targetPlayer != null && targetPlayer.IsInventoryFull)
+            if (targetPlayer != null && !IsGolden && targetPlayer.IsInventoryFull)
             {
                 Debug.Log($"[InteractableCube] {name} no recolectado: inventario lleno de {targetPlayer.name} ({targetPlayer.CollectedCount}/{targetPlayer.MaxCollected}).");
                 return false;
@@ -358,13 +464,22 @@ public class InteractableCube : NetworkBehaviour
 
         isCollected = true;
 
-        bool added = targetPlayer.AddCollectedServerSide(1);
-        if (!added)
+        if (IsGolden)
         {
-            // Límite alcanzado entre validación y escritura (race condition) -> cancelar
-            isCollected = false;
-            Debug.Log($"[InteractableCube] {name} recolección cancelada: inventario lleno.");
-            return false;
+            // El dorado entrega puntos directos al marcador, no entra al inventario.
+            targetPlayer.AddScoreDirectServerSide(GoldenPoints);
+            Debug.Log($"[InteractableCube] {targetPlayer.name} recolectó el objeto dorado (+{GoldenPoints} puntos directos).");
+        }
+        else
+        {
+            bool added = targetPlayer.AddCollectedServerSide(1);
+            if (!added)
+            {
+                // Límite alcanzado entre validación y escritura (race condition) -> cancelar
+                isCollected = false;
+                Debug.Log($"[InteractableCube] {name} recolección cancelada: inventario lleno.");
+                return false;
+            }
         }
         Collected?.Invoke(targetPlayer);
 
@@ -401,14 +516,23 @@ public class InteractableCube : NetworkBehaviour
             Destroy(gameObject);
             return true;
         }
-        if (targetPlayer.IsInventoryFull) return false;
+        if (targetPlayer.IsInventoryFull && !IsGolden) return false;
 
         isCollected = true;
-        bool added = targetPlayer.AddCollected(1);
-        if (!added)
+        if (IsGolden)
         {
-            isCollected = false;
-            return false;
+            // Offline: puntos directos, no pasa por inventario.
+            targetPlayer.AddScoreDirectServerSide(GoldenPoints);
+            Debug.Log($"[InteractableCube] {targetPlayer.name} recolectó el objeto dorado offline (+{GoldenPoints} puntos).");
+        }
+        else
+        {
+            bool added = targetPlayer.AddCollected(1);
+            if (!added)
+            {
+                isCollected = false;
+                return false;
+            }
         }
         Collected?.Invoke(targetPlayer);
         PublishCubeState(true);

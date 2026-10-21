@@ -1,10 +1,11 @@
 using System.Collections;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Muestra un tutorial express dinámico y animado (Objetivo y Tiempo) antes de la cuenta regresiva.
+/// Muestra un tutorial express dinámico y animado (Objetivo, Tiempo y Panel 3) antes de la cuenta regresiva.
 /// Incluye animaciones de entrada fluidas (slide-up, pop y fade) para la imagen y la descripción en cada panel.
 /// Se sincroniza automáticamente con MatchCountdownManager y muestra la duración real desde MatchTimerManager.
 /// Ubicar este script en el contenedor del Canvas en MainScene.
@@ -18,12 +19,15 @@ public class ExpressTutorialUI : MonoBehaviour
     [Tooltip("CanvasGroup opcional para transiciones suaves de entrada y salida (fade) de todo el tutorial.")]
     [SerializeField] private CanvasGroup rootCanvasGroup;
 
-    [Header("Paneles del Tutorial (2 Pasos)")]
+    [Header("Paneles del Tutorial (3 Pasos)")]
     [Tooltip("Panel 1: Explica el objetivo principal del juego (paquetes y entregas).")]
     [SerializeField] private GameObject panelObjective;
 
     [Tooltip("Panel 2: Explica el tiempo límite y condición de victoria.")]
     [SerializeField] private GameObject panelTime;
+
+    [Tooltip("Panel 3: Tercer paso del tutorial (activación / contenido adicional).")]
+    [SerializeField] private GameObject panelThree;
 
     [Header("Elementos Animados - Panel Objetivo (Paso 1)")]
     [Tooltip("Imagen o icono ilustrativo del objetivo.")]
@@ -41,6 +45,22 @@ public class ExpressTutorialUI : MonoBehaviour
 
     [Tooltip("Plantilla para formatear la descripción del tiempo. Usa {0} para el tiempo formateado.")]
     [SerializeField] private string timeFormatTemplate = "¡Tienes {0} para entregar la mayor cantidad de paquetes en los edificios y ganar!";
+
+    [Header("Elementos Animados - Panel 3 (Paso 3)")]
+    [Tooltip("Primera imagen o icono ilustrativo del tercer panel.")]
+    [SerializeField] private RectTransform panelThreeImage1;
+
+    [Tooltip("Segunda imagen o icono ilustrativo del tercer panel.")]
+    [SerializeField] private RectTransform panelThreeImage2;
+
+    [Tooltip("Tercera imagen o icono ilustrativo del tercer panel.")]
+    [SerializeField] private RectTransform panelThreeImage3;
+
+    [Tooltip("Primer texto animado del tercer panel.")]
+    [SerializeField] private RectTransform panelThreeText1;
+
+    [Tooltip("Segundo texto animado del tercer panel.")]
+    [SerializeField] private RectTransform panelThreeText2;
 
     [Header("Configuración de Animación de Entrada")]
     [Tooltip("Duración de la animación de entrada para cada elemento (segundos).")]
@@ -91,11 +111,24 @@ public class ExpressTutorialUI : MonoBehaviour
     private Vector3 timeDescOrigScale = Vector3.one;
     private CanvasGroup timeDescCanvasGroup;
 
+    // Datos de cada elemento animado del Panel 3 (3 imágenes + 2 textos)
+    private sealed class PanelThreeElement
+    {
+        public RectTransform Rect;
+        public CanvasGroup Group;
+        public Vector2 OrigPos;
+        public Vector3 OrigScale = Vector3.one;
+        public float Delay;
+    }
+
+    private readonly List<PanelThreeElement> panelThreeElements = new List<PanelThreeElement>();
+
     private Coroutine fadeCoroutine;
     private Coroutine progressCoroutine;
     private Coroutine punchCoroutine;
     private Coroutine entranceCoroutine1;
     private Coroutine entranceCoroutine2;
+    private readonly List<Coroutine> panelThreeEntranceCoroutines = new List<Coroutine>();
     private int currentStep = -1;
 
     private void Awake()
@@ -162,6 +195,32 @@ public class ExpressTutorialUI : MonoBehaviour
             timeDescOrigScale = rect.localScale;
             timeDescCanvasGroup = EnsureCanvasGroup(timeDescriptionText.gameObject);
         }
+
+        panelThreeElements.Clear();
+        RectTransform[] panelThreeRects =
+        {
+            panelThreeImage1,
+            panelThreeImage2,
+            panelThreeImage3,
+            panelThreeText1,
+            panelThreeText2,
+        };
+
+        for (int i = 0; i < panelThreeRects.Length; i++)
+        {
+            var rect = panelThreeRects[i];
+            if (rect == null) continue;
+
+            panelThreeElements.Add(new PanelThreeElement
+            {
+                Rect = rect,
+                OrigPos = rect.anchoredPosition,
+                OrigScale = rect.localScale,
+                Group = EnsureCanvasGroup(rect.gameObject),
+                // Entrada escalonada: cada elemento entra tras el anterior
+                Delay = staggerDelay * i,
+            });
+        }
     }
 
     private CanvasGroup EnsureCanvasGroup(GameObject go)
@@ -178,7 +237,7 @@ public class ExpressTutorialUI : MonoBehaviour
     /// <summary>
     /// Responde al cambio de paso del tutorial sincronizado por el servidor.
     /// </summary>
-    /// <param name="step">0 = Objetivo, 1 = Tiempo, -1 = Inactivo</param>
+    /// <param name="step">0 = Objetivo, 1 = Tiempo, 2 = Panel 3, -1 = Inactivo</param>
     private void HandleTutorialStepChanged(int step)
     {
         currentStep = step;
@@ -233,7 +292,7 @@ public class ExpressTutorialUI : MonoBehaviour
 
         if (step == 0)
         {
-            ShowStep(panelObjective, panelTime);
+            ShowStep(panelObjective, panelTime, panelThree);
             TriggerStepEntranceAnimations(0);
             UpdateStepDots(0);
         }
@@ -243,6 +302,12 @@ public class ExpressTutorialUI : MonoBehaviour
             ShowStep(panelTime, panelObjective);
             TriggerStepEntranceAnimations(1);
             UpdateStepDots(1);
+        }
+        else if (step == 2)
+        {
+            ShowStep(panelThree, panelObjective, panelTime);
+            TriggerStepEntranceAnimations(2);
+            UpdateStepDots(2);
         }
 
         // Animar barra de tiempo
@@ -323,12 +388,34 @@ public class ExpressTutorialUI : MonoBehaviour
                 ));
             }
         }
+        else if (step == 2)
+        {
+            // Panel 3: cada uno de sus 5 elementos animados entra con su desfase
+            foreach (var element in panelThreeElements)
+            {
+                if (element.Rect == null) continue;
+
+                panelThreeEntranceCoroutines.Add(StartCoroutine(AnimateEntranceElement(
+                    element.Rect,
+                    element.Group,
+                    element.OrigPos,
+                    element.OrigScale,
+                    delay: element.Delay
+                )));
+            }
+        }
     }
 
     private void StopEntranceCoroutines()
     {
         if (entranceCoroutine1 != null) StopCoroutine(entranceCoroutine1);
         if (entranceCoroutine2 != null) StopCoroutine(entranceCoroutine2);
+
+        foreach (var coroutine in panelThreeEntranceCoroutines)
+        {
+            if (coroutine != null) StopCoroutine(coroutine);
+        }
+        panelThreeEntranceCoroutines.Clear();
     }
 
     /// <summary>
@@ -382,11 +469,14 @@ public class ExpressTutorialUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Activa el panel activo y desactiva el otro con animación de punch.
+    /// Activa el panel activo y desactiva los demás con animación de punch.
     /// </summary>
-    private void ShowStep(GameObject activePanel, GameObject inactivePanel)
+    private void ShowStep(GameObject activePanel, params GameObject[] inactivePanels)
     {
-        if (inactivePanel != null) inactivePanel.SetActive(false);
+        foreach (var panel in inactivePanels)
+        {
+            if (panel != null) panel.SetActive(false);
+        }
 
         if (activePanel != null)
         {
@@ -572,7 +662,7 @@ public class ExpressTutorialUI : MonoBehaviour
         }
 
         // Buscar paneles si no están asignados
-        if (panelObjective == null || panelTime == null)
+        if (panelObjective == null || panelTime == null || panelThree == null)
         {
             foreach (Transform child in tutorialRoot.transform)
             {
@@ -585,14 +675,21 @@ public class ExpressTutorialUI : MonoBehaviour
                 {
                     panelTime = child.gameObject;
                 }
+                else if (panelThree == null && (lower.Contains("panel3") || lower.Contains("step3") || lower.Contains("paso3") || lower.Contains("paneltres")))
+                {
+                    panelThree = child.gameObject;
+                }
             }
 
-            // Fallback: usar los primeros dos hijos si aún no se encontraron
+            // Fallback: usar los primeros hijos si aún no se encontraron
             if (panelObjective == null && tutorialRoot.transform.childCount > 0)
                 panelObjective = tutorialRoot.transform.GetChild(0).gameObject;
 
             if (panelTime == null && tutorialRoot.transform.childCount > 1)
                 panelTime = tutorialRoot.transform.GetChild(1).gameObject;
+
+            if (panelThree == null && tutorialRoot.transform.childCount > 2)
+                panelThree = tutorialRoot.transform.GetChild(2).gameObject;
         }
 
         // Auto-detectar elementos en Panel 1 (Objetivo)
@@ -692,6 +789,34 @@ public class ExpressTutorialUI : MonoBehaviour
                 {
                     timeDescriptionText = texts.Length > 1 ? texts[1] : texts[0];
                 }
+            }
+        }
+
+        // Auto-detectar elementos en Panel 3 (3 imágenes + 2 textos)
+        if (panelThree != null)
+        {
+            if (panelThreeImage1 == null && panelThreeImage2 == null && panelThreeImage3 == null)
+            {
+                var images = panelThree.GetComponentsInChildren<Image>(true);
+                int foundImages = 0;
+                foreach (var img in images)
+                {
+                    if (img.gameObject == panelThree) continue;
+
+                    if (foundImages == 0) panelThreeImage1 = img.rectTransform;
+                    else if (foundImages == 1) panelThreeImage2 = img.rectTransform;
+                    else if (foundImages == 2) panelThreeImage3 = img.rectTransform;
+
+                    foundImages++;
+                    if (foundImages >= 3) break;
+                }
+            }
+
+            if (panelThreeText1 == null && panelThreeText2 == null)
+            {
+                var texts = panelThree.GetComponentsInChildren<TMP_Text>(true);
+                if (texts.Length > 0) panelThreeText1 = texts[0].rectTransform;
+                if (texts.Length > 1) panelThreeText2 = texts[1].rectTransform;
             }
         }
 

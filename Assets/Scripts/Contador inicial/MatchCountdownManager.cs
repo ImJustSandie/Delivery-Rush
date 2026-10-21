@@ -19,7 +19,7 @@ public class MatchCountdownManager : NetworkBehaviour
     [SerializeField] private string mainSceneName = "MainScene";
 
     [Header("Configuración Tutorial Express")]
-    [Tooltip("Si es true, muestra los paneles del tutorial express (Objetivo y Tiempo) antes del conteo.")]
+    [Tooltip("Si es true, muestra los paneles del tutorial express (Objetivo, Tiempo y Panel 3) antes del conteo.")]
     [SerializeField] private bool enableExpressTutorial = true;
     [Tooltip("Duración de cada panel en segundos antes de avanzar automáticamente.")]
     [SerializeField] private float tutorialStepDuration = 3.5f;
@@ -39,7 +39,7 @@ public class MatchCountdownManager : NetworkBehaviour
         NetworkVariableWritePermission.Server
     );
 
-    [Header("Estado Sincronizado Tutorial (-1: Inactivo, 0: Objetivo, 1: Tiempo)")]
+    [Header("Estado Sincronizado Tutorial (-1: Inactivo, 0: Objetivo, 1: Tiempo, 2: Panel 3)")]
     private NetworkVariable<int> currentTutorialStep = new NetworkVariable<int>(
         -1,
         NetworkVariableReadPermission.Everyone,
@@ -201,7 +201,7 @@ public class MatchCountdownManager : NetworkBehaviour
             yield return new WaitForSeconds(delayAfterTransitionOpen);
         }
 
-        // 2. Tutorial Express (Panel 0: Objetivo, Panel 1: Tiempo de juego)
+        // 2. Tutorial Express (Panel 0: Objetivo, Panel 1: Tiempo de juego, Panel 2: Panel 3)
         if (enableExpressTutorial)
         {
             // Paso 0: Objetivo principal
@@ -210,6 +210,10 @@ public class MatchCountdownManager : NetworkBehaviour
 
             // Paso 1: Tiempo y victoria
             currentTutorialStep.Value = 1;
+            yield return new WaitForSeconds(tutorialStepDuration);
+
+            // Paso 2: Panel 3
+            currentTutorialStep.Value = 2;
             yield return new WaitForSeconds(tutorialStepDuration);
 
             // Fin del tutorial express

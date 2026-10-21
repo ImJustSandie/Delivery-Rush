@@ -962,13 +962,13 @@ MonoBehaviour:
     serializedVersion: 2
     rgba: 4294967295
   m_fontColor: {r: 1, g: 1, b: 1, a: 1}
-  m_enableVertexGradient: 1
-  m_colorMode: 3
+  m_enableVertexGradient: 0
+  m_colorMode: 0
   m_fontColorGradient:
     topLeft: {r: 0, g: 0.93035746, b: 1, a: 1}
-    topRight: {r: 1, g: 0.9533769, b: 0.8066038, a: 1}
-    bottomLeft: {r: 0.91948867, g: 0.504717, b: 1, a: 1}
-    bottomRight: {r: 0.9811321, g: 0.7207196, b: 0.67105734, a: 1}
+    topRight: {r: 0, g: 0.93035746, b: 1, a: 1}
+    bottomLeft: {r: 0, g: 0.93035746, b: 1, a: 1}
+    bottomRight: {r: 0, g: 0.93035746, b: 1, a: 1}
   m_fontColorGradientPreset: {fileID: 0}
   m_spriteAsset: {fileID: 0}
   m_tintAllSprites: 0
@@ -1827,6 +1827,7 @@ MonoBehaviour:
   idleJumpInterval: 1.2
   jumpAccelerationExponent: 0.7
   rankLabels: []
+  playerTextPodiumColor: {r: 0.98039216, g: 0.72156864, b: 0.67058825, a: 1}
   winnerBannerPanel: {fileID: 446129396}
   winnerText: {fileID: 1177222307}
   winnerTextFormat: '{0}'

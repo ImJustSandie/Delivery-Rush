@@ -553,6 +553,8 @@ public class PodiumManager : MonoBehaviour
         if (winnerText != null)
         {
             winnerText.text = winnerAnnouncement;
+            // Desactivar el degradado de vértices del TMP para que el color sólido sea visible.
+            winnerText.enableVertexGradient = false;
             // Color fijo del nombre en Podio (#FAB8AB), sin variar por slot.
             winnerText.color = playerTextPodiumColor;
         }
